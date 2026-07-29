@@ -1,0 +1,6 @@
+.env
+node_modules/
+public/assets/*.js
+public/assets/*.js.map
+npm-debug.log*
+.DS_Store
