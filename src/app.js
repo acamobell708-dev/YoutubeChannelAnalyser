@@ -10,7 +10,20 @@ import {
 } from "./config.js";
 import { toPublicError } from "./errors.js";
 
-export function createApp({ config, analyseVideo }) {
+function registerAnalysisRoute(app, { path, config, analyse, requestData }) {
+  app.post(path, async (request, response) => {
+    try {
+      assertAnalysisConfig(config);
+      const analysis = await analyse(requestData(request.body ?? {}));
+      response.json({ analysis });
+    } catch (error) {
+      const publicError = toPublicError(error);
+      response.status(publicError.status).json(publicError.body);
+    }
+  });
+}
+
+export function createApp({ config, analyseVideo, analyseChannel }) {
   const app = express();
   const publicDirectory = path.join(PROJECT_ROOT, "public");
 
@@ -39,18 +52,21 @@ export function createApp({ config, analyseVideo }) {
     });
   });
 
-  app.post("/api/video-analysis", async (request, response) => {
-    try {
-      assertAnalysisConfig(config);
-      const analysis = await analyseVideo({
-        url: request.body?.url,
-        maxComments: request.body?.maxComments,
-      });
-      response.json({ analysis });
-    } catch (error) {
-      const publicError = toPublicError(error);
-      response.status(publicError.status).json(publicError.body);
-    }
+  registerAnalysisRoute(app, {
+    path: "/api/video-analysis",
+    config,
+    analyse: analyseVideo,
+    requestData: (body) => ({
+      url: body.url,
+      maxComments: body.maxComments,
+    }),
+  });
+
+  registerAnalysisRoute(app, {
+    path: "/api/channel-analysis",
+    config,
+    analyse: analyseChannel,
+    requestData: (body) => ({ url: body.url }),
   });
 
   app.use(
@@ -63,6 +79,10 @@ export function createApp({ config, analyseVideo }) {
 
   app.get("/", (_request, response) => {
     response.redirect("/VideoDashboard.html");
+  });
+
+  app.get("/ChannelDashboard.html", (_request, response) => {
+    response.redirect("/ChannelDashbaord.html");
   });
 
   app.use((_request, response) => {

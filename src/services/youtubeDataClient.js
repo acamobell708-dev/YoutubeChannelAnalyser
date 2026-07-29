@@ -3,6 +3,8 @@ import {
   extractVideoId,
   validateYouTubeVideoUrl,
 } from "../domain/videoUrl.js";
+import { parseYouTubeChannelUrl } from "../domain/channelUrl.js";
+import { TtlCache } from "./ttlCache.js";
 
 const API_ROOT = "https://www.googleapis.com/youtube/v3";
 
@@ -34,10 +36,59 @@ function getGoogleErrorReason(payload) {
   return payload?.error?.errors?.[0]?.reason ?? null;
 }
 
+function chunk(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker()),
+  );
+  return results;
+}
+
+function parseDurationSeconds(duration) {
+  const match = String(duration ?? "").match(
+    /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/,
+  );
+  if (!match) return null;
+
+  const [, days = "0", hours = "0", minutes = "0", seconds = "0"] =
+    match;
+  return (
+    Number(days) * 86_400 +
+    Number(hours) * 3_600 +
+    Number(minutes) * 60 +
+    Number(seconds)
+  );
+}
+
 export class YouTubeDataClient {
-  constructor({ apiKey, fetchImpl = fetch }) {
+  constructor({
+    apiKey,
+    fetchImpl = fetch,
+    channelCache = new TtlCache(),
+    channelBatchConcurrency = 4,
+  }) {
     this.apiKey = apiKey;
     this.fetch = fetchImpl;
+    this.channelCache = channelCache;
+    this.channelBatchConcurrency = channelBatchConcurrency;
   }
 
   async request(resource, parameters) {
@@ -191,5 +242,126 @@ export class YouTubeDataClient {
           : asNonNegativeInteger(item.statistics.commentCount),
       comments,
     };
+  }
+
+  async fetchUploadVideoIds(uploadsPlaylistId) {
+    const videoIds = [];
+    let pageToken;
+
+    do {
+      const payload = await this.request("playlistItems", {
+        part: "contentDetails",
+        playlistId: uploadsPlaylistId,
+        maxResults: 50,
+        pageToken,
+        fields: "nextPageToken,items(contentDetails(videoId))",
+      });
+
+      for (const item of payload.items ?? []) {
+        const videoId = String(item?.contentDetails?.videoId ?? "").trim();
+        if (videoId) videoIds.push(videoId);
+      }
+      pageToken = payload.nextPageToken;
+    } while (pageToken);
+
+    return [...new Set(videoIds)];
+  }
+
+  async fetchVideoStatistics(videoIds) {
+    const batches = chunk(videoIds, 50);
+    const batchResults = await mapWithConcurrency(
+      batches,
+      this.channelBatchConcurrency,
+      async (videoIdBatch) => {
+        const payload = await this.request("videos", {
+          part: "snippet,contentDetails,statistics",
+          id: videoIdBatch.join(","),
+          fields:
+            "items(id,snippet(title,description,publishedAt),contentDetails(duration),statistics(viewCount,likeCount,commentCount))",
+        });
+
+        return payload.items ?? [];
+      },
+    );
+
+    return batchResults.flatMap((items) =>
+      items
+        .map((item) => {
+          const viewCount = Number.parseInt(item.statistics?.viewCount, 10);
+          const title = String(item.snippet?.title ?? "").trim();
+          if (!item.id || !title || !Number.isInteger(viewCount)) return null;
+
+          return {
+            videoId: item.id,
+            title,
+            description: String(item.snippet?.description ?? "").trim(),
+            publishedAt: item.snippet?.publishedAt ?? null,
+            durationSeconds: parseDurationSeconds(
+              item.contentDetails?.duration,
+            ),
+            viewCount,
+            likeCount:
+              item.statistics?.likeCount === undefined
+                ? null
+                : asNonNegativeInteger(item.statistics.likeCount),
+            commentCount: asNonNegativeInteger(
+              item.statistics?.commentCount,
+            ),
+          };
+        })
+        .filter(Boolean),
+    );
+  }
+
+  async fetchChannelUncached(rawUrl) {
+    const { sourceUrl, lookup } = parseYouTubeChannelUrl(rawUrl);
+    const channelPayload = await this.request("channels", {
+      part: "snippet,contentDetails,statistics",
+      [lookup.parameter]: lookup.value,
+      fields:
+        "items(id,snippet(title,thumbnails),contentDetails(relatedPlaylists(uploads)),statistics(viewCount,subscriberCount,hiddenSubscriberCount,videoCount))",
+    });
+
+    const item = channelPayload.items?.[0];
+    if (!item) {
+      throw new AppError(
+        "No public YouTube channel was found for that URL.",
+        { status: 404, code: "CHANNEL_NOT_FOUND" },
+      );
+    }
+
+    const uploadsPlaylistId =
+      item.contentDetails?.relatedPlaylists?.uploads;
+    if (!uploadsPlaylistId) {
+      throw new AppError(
+        "YouTube did not return an uploads playlist for this channel.",
+        { status: 502, code: "CHANNEL_UPLOADS_UNAVAILABLE" },
+      );
+    }
+
+    const videoIds = await this.fetchUploadVideoIds(uploadsPlaylistId);
+    const videos = await this.fetchVideoStatistics(videoIds);
+    const subscriberCount = item.statistics?.hiddenSubscriberCount
+      ? null
+      : asNonNegativeInteger(item.statistics?.subscriberCount);
+
+    return {
+      sourceUrl,
+      channelId: item.id,
+      title: String(item.snippet?.title ?? "Unknown channel").trim(),
+      thumbnailUrl: getBestThumbnail(item.snippet?.thumbnails),
+      subscriberCount,
+      totalViewCount: asNonNegativeInteger(item.statistics?.viewCount),
+      videoCount: asNonNegativeInteger(item.statistics?.videoCount),
+      analysedVideoCount: videos.length,
+      videos,
+    };
+  }
+
+  async fetchChannel(rawUrl) {
+    const { sourceUrl } = parseYouTubeChannelUrl(rawUrl);
+    return this.channelCache.getOrCreate(`channel:${sourceUrl}`, () =>
+      this.fetchChannelUncached(sourceUrl),
+    );
   }
 }

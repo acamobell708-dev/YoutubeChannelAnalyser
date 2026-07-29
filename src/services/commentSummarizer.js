@@ -1,10 +1,14 @@
-import OpenAI from "openai";
-
-import { AppError } from "../errors.js";
+import { OpenAIAnalysisClient } from "./openAIAnalysisClient.js";
 
 export class CommentSummarizer {
-  constructor({ apiKey, model = "gpt-5.4-mini", client }) {
-    this.client = client ?? new OpenAI({ apiKey });
+  constructor({
+    apiKey,
+    model = "gpt-5.4-mini",
+    client,
+    analysisClient,
+  }) {
+    this.analysisClient =
+      analysisClient ?? new OpenAIAnalysisClient({ apiKey, client });
     this.model = model;
   }
 
@@ -36,30 +40,15 @@ export class CommentSummarizer {
       "END UNTRUSTED COMMENT DATA",
     ].join("\n");
 
-    let response;
-    try {
-      response = await this.client.responses.create({
-        model: this.model,
-        instructions,
-        input,
-        reasoning: { effort: "low" },
-        max_output_tokens: 700,
-      });
-    } catch (error) {
-      throw new AppError(
+    return this.analysisClient.createText({
+      model: this.model,
+      instructions,
+      input,
+      reasoningEffort: "low",
+      maxOutputTokens: 700,
+      errorCode: "OPENAI_SUMMARY_ERROR",
+      errorMessage:
         "OpenAI could not create the comment summary. Check the API key, account balance, model access, and server connection.",
-        { status: 502, code: "OPENAI_SUMMARY_ERROR", cause: error },
-      );
-    }
-
-    const summary = String(response.output_text ?? "").trim();
-    if (!summary) {
-      throw new AppError("OpenAI returned an empty comment summary.", {
-        status: 502,
-        code: "EMPTY_SUMMARY",
-      });
-    }
-
-    return summary;
+    });
   }
 }

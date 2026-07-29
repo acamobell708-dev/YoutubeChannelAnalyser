@@ -1,22 +1,36 @@
+import { createChannelAnalyser } from "./analysis/analyseChannel.js";
 import { createVideoAnalyser } from "./analysis/analyseVideo.js";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
+import { ChannelPerformanceAnalyst } from "./services/channelPerformanceAnalyst.js";
 import { CommentSummarizer } from "./services/commentSummarizer.js";
+import { OpenAIAnalysisClient } from "./services/openAIAnalysisClient.js";
 import { YouTubeDataClient } from "./services/youtubeDataClient.js";
 
 const youtubeClient = new YouTubeDataClient({
   apiKey: config.youtubeApiKey,
 });
-const summarizer = new CommentSummarizer({
+const openAIAnalysisClient = new OpenAIAnalysisClient({
   apiKey: config.openaiApiKey || "not-configured",
+});
+const summarizer = new CommentSummarizer({
   model: config.openaiModel,
+  analysisClient: openAIAnalysisClient,
+});
+const performanceAnalyst = new ChannelPerformanceAnalyst({
+  model: config.openaiChannelModel,
+  analysisClient: openAIAnalysisClient,
 });
 const analyseVideo = createVideoAnalyser({ youtubeClient, summarizer });
-const app = createApp({ config, analyseVideo });
+const analyseChannel = createChannelAnalyser({
+  youtubeClient,
+  performanceAnalyst,
+});
+const app = createApp({ config, analyseVideo, analyseChannel });
 
 const server = app.listen(config.port, () => {
   console.log(
-    `YouTube Video Analyser is running at http://localhost:${config.port}/VideoDashboard.html`,
+    `YouTube Analyser is running at http://localhost:${config.port}/VideoDashboard.html`,
   );
   if (!config.hasYouTubeApiKey || !config.hasOpenAIApiKey) {
     console.log(

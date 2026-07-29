@@ -1,82 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
-
-const numberFormatter = new Intl.NumberFormat("en-GB");
-const dateFormatter = new Intl.DateTimeFormat("en-GB", {
-  day: "numeric",
-  month: "short",
-  year: "numeric",
-});
-
-function formatNumber(value) {
-  return Number.isFinite(value) ? numberFormatter.format(value) : "—";
-}
-
-function formatDate(value) {
-  if (!value) return "Date unavailable";
-  const date = new Date(value);
-  return Number.isNaN(date.valueOf())
-    ? "Date unavailable"
-    : dateFormatter.format(date);
-}
-
-function summaryLines(summary) {
-  return String(summary ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.replace(/^\s*[-*•]\s*/, "").trim())
-    .filter(Boolean);
-}
-
-function Header() {
-  return (
-    <header className="site-header">
-      <a
-        className="brand"
-        href="/VideoDashboard.html"
-        aria-label="YouTube Signal Lab"
-      >
-        <span className="brand-mark" aria-hidden="true">
-          ▶
-        </span>
-        <span>
-          <strong>YT Signal</strong>
-          <small>Audience intelligence</small>
-        </span>
-      </a>
-      <nav className="primary-nav" aria-label="Primary navigation">
-        <a
-          className="active"
-          href="/VideoDashboard.html"
-          aria-current="page"
-        >
-          Video Dashboard
-        </a>
-        <a href="/ChannelDashbaord.html">
-          Channel Dashboard
-          <span className="soon-tag">Soon</span>
-        </a>
-      </nav>
-    </header>
-  );
-}
-
-function ConfigurationNotice({ status }) {
-  if (!status || status.ready) return null;
-
-  const missing = [];
-  if (!status.youtubeApiConfigured) missing.push("YouTube API key");
-  if (!status.openaiConfigured) missing.push("OpenAI API key");
-
-  return (
-    <aside className="configuration-notice" role="status">
-      <span aria-hidden="true">!</span>
-      <p>
-        <strong>Setup required.</strong> Add your {missing.join(" and ")} to the
-        server’s <code>.env</code> file before running an analysis.
-      </p>
-    </aside>
-  );
-}
+import {
+  ConfigurationNotice,
+  ErrorNotice,
+  Footer,
+  formatDate,
+  formatNumber,
+  Header,
+  SanityCard,
+  summaryLines,
+} from "./sharedDashboard.jsx";
 
 function EmptyStage() {
   return (
@@ -216,19 +149,7 @@ function ResultStage({ analysis }) {
         )}
       </article>
 
-      <aside
-        className={`sanity-card ${analysis.sanity.passed ? "passed" : "failed"}`}
-      >
-        <div className="sanity-icon" aria-hidden="true">
-          {analysis.sanity.passed ? "✓" : "!"}
-        </div>
-        <div>
-          <strong>
-            Sanity check {analysis.sanity.passed ? "passed" : "failed"}
-          </strong>
-          <p>{analysis.sanity.checks.join(" · ")}</p>
-        </div>
-      </aside>
+      <SanityCard sanity={analysis.sanity} />
     </section>
   );
 }
@@ -295,7 +216,7 @@ function App() {
 
   return (
     <>
-      <Header />
+      <Header activePage="video" />
       <main>
         <section className="hero">
           <div className="hero-copy">
@@ -350,15 +271,7 @@ function App() {
 
         <div className="content-shell">
           <ConfigurationNotice status={configuration} />
-          {error && (
-            <div className="error-notice" role="alert">
-              <span aria-hidden="true">!</span>
-              <div>
-                <strong>Analysis stopped</strong>
-                <p>{error}</p>
-              </div>
-            </div>
-          )}
+          <ErrorNotice message={error} />
 
           {loading ? (
             <LoadingStage />
@@ -370,13 +283,7 @@ function App() {
         </div>
       </main>
 
-      <footer>
-        <span>YT Signal</span>
-        <p>
-          Public YouTube data via YouTube Data API v3. Comment interpretation
-          via OpenAI.
-        </p>
-      </footer>
+      <Footer />
     </>
   );
 }

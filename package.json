@@ -6,7 +6,7 @@
   "description": "React and Node.js dashboard for analysing YouTube video engagement and comments.",
   "scripts": {
     "build": "npm run build:client",
-    "build:client": "esbuild public/client/VideoDashboard.jsx --bundle --minify --sourcemap --outfile=public/assets/VideoDashboard.js",
+    "build:client": "esbuild public/client/VideoDashboard.jsx public/client/ChannelDashboard.jsx --bundle --minify --sourcemap --outdir=public/assets --entry-names=[name]",
     "dev": "npm run build:client && node --watch src/server.js",
     "start": "npm run build:client && node src/server.js",
     "test": "node --test --test-isolation=none"

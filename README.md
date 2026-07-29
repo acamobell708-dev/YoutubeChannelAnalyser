@@ -6,8 +6,8 @@ This repository now contains two implementations:
 - The repository root is a React and Node.js web application that uses the
   official YouTube Data API v3.
 
-The web application accepts a YouTube video URL and displays the same core
-information as the prototype:
+The web application has two analysis workflows. The video dashboard accepts a
+YouTube video URL and displays the same core information as the prototype:
 
 - video title, channel, ID, publication date, and thumbnail;
 - view, like, and reported comment counts;
@@ -15,12 +15,27 @@ information as the prototype:
 - an OpenAI-generated summary of audience reaction; and
 - a final sanity check confirming that the result is internally consistent.
 
+The channel dashboard accepts an `@handle`, `/channel/ID`, or legacy `/user/`
+URL and displays:
+
+- channel-level subscriber, view, and public-video totals;
+- the top 10 public uploads by lifetime view count;
+- the top 10 public uploads by lifetime comment count;
+- numerical view, comment, and like totals for each ranked video;
+- a GPT-5.4 analysis of recurring characteristics in the two rankings; and
+- a deterministic sanity check that verifies both rankings.
+
+GPT-5.4 receives only bounded public metadata and statistics for the ranked
+videos. It explains associations rather than deciding the rankings, and the
+application does not claim access to private metrics such as impressions,
+click-through rate, audience retention, or watch time.
+
 ## Project structure
 
 ```text
 public/
   VideoDashboard.html          React video-analysis page
-  ChannelDashbaord.html        Placeholder for channel analytics
+  ChannelDashbaord.html        React channel-analysis page
   client/                      Browser-side React source
   styles/                      Browser-side presentation
 src/
@@ -73,6 +88,7 @@ Add the existing OpenAI API key to the same root `.env`:
 ```dotenv
 OPENAI_API_KEY=replace_with_your_openai_api_key
 OPENAI_MODEL=gpt-5.4-mini
+OPENAI_CHANNEL_MODEL=gpt-5.4
 ```
 
 Both keys remain on the Node server and are never returned to the browser.
@@ -91,6 +107,7 @@ Then open:
 
 ```text
 http://localhost:3000/VideoDashboard.html
+http://localhost:3000/ChannelDashbaord.html
 ```
 
 On Windows, `RunALL.cmd` installs dependencies if necessary, builds the React
@@ -113,14 +130,35 @@ npm run build
 The dashboard and `/api/health` can also start with placeholder keys. An actual
 analysis request returns a clear setup message until both keys are configured.
 
+## Continuous integration
+
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs on every push
+and pull request. It installs the locked dependency versions with `npm ci`,
+runs the complete offline test suite, and verifies that both React dashboards
+produce a successful production build. API secrets are not required by CI.
+
 ## API usage
 
 The server uses:
 
-- `videos.list` for official video metadata and public statistics;
+- `channels.list` to resolve a channel and its uploads playlist;
+- `playlistItems.list` to page through public uploads;
+- batched `videos.list` calls for official video metadata and public
+  statistics;
 - `commentThreads.list` for bounded top-level public comment samples; and
-- the OpenAI Responses API for the audience summary.
+- the OpenAI Responses API for the video audience summary and channel pattern
+  analysis.
 
 Comments are treated as untrusted quoted data. They are not rendered back to
 the browser, and any instructions contained within them are explicitly ignored
 by the summarisation prompt.
+
+Channel catalogue results are cached in memory for 15 minutes. This reduces
+repeat YouTube API calls while keeping the cache simple to replace with a
+shared store if the application is deployed across multiple server instances.
+
+The JSON endpoints are:
+
+- `POST /api/video-analysis` with `{ "url": "...", "maxComments": 100 }`
+- `POST /api/channel-analysis` with `{ "url": "..." }`
+- `GET /api/health` for non-secret configuration readiness

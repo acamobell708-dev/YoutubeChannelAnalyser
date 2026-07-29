@@ -30,12 +30,16 @@ export function loadConfig(environment = process.env) {
   const youtubeApiKey = (environment.YOUTUBE_API_KEY ?? "").trim();
   const openaiApiKey = (environment.OPENAI_API_KEY ?? "").trim();
   const openaiModel = (environment.OPENAI_MODEL ?? "gpt-5.4-mini").trim();
+  const openaiChannelModel = (
+    environment.OPENAI_CHANNEL_MODEL ?? "gpt-5.4"
+  ).trim();
   const parsedPort = Number.parseInt(environment.PORT ?? "3000", 10);
 
   return {
     youtubeApiKey,
     openaiApiKey,
     openaiModel: openaiModel || "gpt-5.4-mini",
+    openaiChannelModel: openaiChannelModel || "gpt-5.4",
     port: Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 3000,
     hasYouTubeApiKey: isConfigured(youtubeApiKey),
     hasOpenAIApiKey: isConfigured(openaiApiKey),
@@ -63,6 +67,7 @@ export function configurationStatus(config) {
     youtubeApiConfigured: config.hasYouTubeApiKey,
     openaiConfigured: config.hasOpenAIApiKey,
     model: config.openaiModel,
+    channelModel: config.openaiChannelModel,
   };
 }
 
