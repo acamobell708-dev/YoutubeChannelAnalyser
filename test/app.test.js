@@ -10,7 +10,7 @@ const CHANNEL_ID = `UC${"d".repeat(22)}`;
 const readyConfig = {
   hasYouTubeApiKey: true,
   hasOpenAIApiKey: true,
-  openaiModel: "gpt-5.4-mini",
+  openaiVideoModel: "gpt-5.4",
   openaiChannelModel: "gpt-5.4",
 };
 
@@ -28,15 +28,37 @@ test("health endpoint reports readiness without exposing API keys", async () => 
   const response = await request(app).get("/api/health").expect(200);
 
   assert.equal(response.body.configuration.ready, true);
-  assert.equal(response.body.configuration.model, "gpt-5.4-mini");
+  assert.equal(response.body.configuration.model, "gpt-5.4");
   assert.equal(response.body.configuration.channelModel, "gpt-5.4");
   assert.equal(JSON.stringify(response.body).includes("api-key"), false);
+});
+
+test("video dashboard and generated assets are always revalidated", async () => {
+  const app = createApp({
+    config: readyConfig,
+    analyseVideo: async () => {
+      throw new Error("not called");
+    },
+    analyseChannel: async () => {
+      throw new Error("not called");
+    },
+  });
+
+  const page = await request(app).get("/VideoDashboard.html").expect(200);
+  assert.match(page.headers["cache-control"], /no-store/);
+  assert.equal(page.headers.pragma, "no-cache");
+  assert.match(page.text, /phase1-compact-20260730/);
+
+  const asset = await request(app)
+    .get("/assets/VideoDashboard.js")
+    .expect(200);
+  assert.match(asset.headers["cache-control"], /no-cache/);
 });
 
 test("analysis endpoint returns a mocked successful result", async () => {
   const expected = {
     video: { videoId: "dQw4w9WgXcQ", title: "Example" },
-    commentSummary: "- Positive response.",
+    insights: { audience: { executiveSummary: "Positive response." } },
     sanity: { passed: true, checks: ["title present"], errors: [] },
   };
   const app = createApp({

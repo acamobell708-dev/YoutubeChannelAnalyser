@@ -3,8 +3,8 @@ import { createVideoAnalyser } from "./analysis/analyseVideo.js";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { ChannelPerformanceAnalyst } from "./services/channelPerformanceAnalyst.js";
-import { CommentSummarizer } from "./services/commentSummarizer.js";
 import { OpenAIAnalysisClient } from "./services/openAIAnalysisClient.js";
+import { VideoInsightAnalyst } from "./services/videoInsightAnalyst.js";
 import { YouTubeDataClient } from "./services/youtubeDataClient.js";
 
 const youtubeClient = new YouTubeDataClient({
@@ -13,15 +13,18 @@ const youtubeClient = new YouTubeDataClient({
 const openAIAnalysisClient = new OpenAIAnalysisClient({
   apiKey: config.openaiApiKey || "not-configured",
 });
-const summarizer = new CommentSummarizer({
-  model: config.openaiModel,
+const videoInsightAnalyst = new VideoInsightAnalyst({
+  model: config.openaiVideoModel,
   analysisClient: openAIAnalysisClient,
 });
 const performanceAnalyst = new ChannelPerformanceAnalyst({
   model: config.openaiChannelModel,
   analysisClient: openAIAnalysisClient,
 });
-const analyseVideo = createVideoAnalyser({ youtubeClient, summarizer });
+const analyseVideo = createVideoAnalyser({
+  youtubeClient,
+  insightAnalyst: videoInsightAnalyst,
+});
 const analyseChannel = createChannelAnalyser({
   youtubeClient,
   performanceAnalyst,

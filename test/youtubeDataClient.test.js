@@ -26,11 +26,25 @@ test("YouTubeDataClient retrieves and normalises official video data", async () 
             id: VIDEO_ID,
             snippet: {
               title: "Example video",
+              description: "A detailed example.",
               channelTitle: "Example channel",
+              channelId: CHANNEL_ID,
               publishedAt: "2026-01-02T12:00:00Z",
+              tags: ["example", "tutorial"],
+              categoryId: "27",
               thumbnails: {
                 high: { url: "https://i.ytimg.com/example.jpg" },
+                maxres: {
+                  url: "https://i.ytimg.com/example-maxres.jpg",
+                  width: 1280,
+                  height: 720,
+                },
               },
+            },
+            contentDetails: {
+              duration: "PT3M30S",
+              caption: "true",
+              definition: "hd",
             },
             statistics: {
               viewCount: "123456",
@@ -42,31 +56,89 @@ test("YouTubeDataClient retrieves and normalises official video data", async () 
       });
     }
 
+    if (url.pathname.endsWith("/videoCategories")) {
+      return jsonResponse({
+        items: [{ id: "27", snippet: { title: "Education" } }],
+      });
+    }
+
     if (url.pathname.endsWith("/commentThreads")) {
+      const isRecent = url.searchParams.get("order") === "time";
+      return jsonResponse({
+        items: isRecent
+          ? [
+              {
+                id: "thread-three",
+                snippet: {
+                  totalReplyCount: 0,
+                  topLevelComment: {
+                    id: "comment-three",
+                    snippet: {
+                      textOriginal: "Can you cover the next topic?",
+                      authorDisplayName: "Viewer three",
+                      likeCount: 1,
+                      publishedAt: "2026-01-05T12:00:00Z",
+                    },
+                  },
+                },
+              },
+            ]
+          : [
+              {
+                id: "thread-one",
+                snippet: {
+                  totalReplyCount: 2,
+                  topLevelComment: {
+                    id: "comment-one",
+                    snippet: {
+                      textOriginal: "Great explanation at 1:20!",
+                      authorDisplayName: "Viewer one",
+                      likeCount: 14,
+                      publishedAt: "2026-01-03T12:00:00Z",
+                    },
+                  },
+                },
+              },
+              {
+                id: "thread-two",
+                snippet: {
+                  totalReplyCount: 0,
+                  topLevelComment: {
+                    id: "comment-two",
+                    snippet: {
+                      textOriginal: "Please make a follow-up.",
+                      authorDisplayName: "Viewer two",
+                      likeCount: 3,
+                      publishedAt: "2026-01-04T12:00:00Z",
+                    },
+                  },
+                },
+              },
+            ],
+      });
+    }
+
+    if (url.pathname.endsWith("/comments")) {
       return jsonResponse({
         items: [
           {
+            id: "reply-one",
             snippet: {
-              topLevelComment: {
-                snippet: {
-                  textOriginal: "Great explanation!",
-                  authorDisplayName: "Viewer one",
-                  likeCount: 14,
-                  publishedAt: "2026-01-03T12:00:00Z",
-                },
-              },
+              parentId: "comment-one",
+              textOriginal: "That was my favourite part too.",
+              authorDisplayName: "Reply one",
+              likeCount: 2,
+              publishedAt: "2026-01-03T13:00:00Z",
             },
           },
           {
+            id: "reply-two",
             snippet: {
-              topLevelComment: {
-                snippet: {
-                  textOriginal: "Please make a follow-up.",
-                  authorDisplayName: "Viewer two",
-                  likeCount: 3,
-                  publishedAt: "2026-01-04T12:00:00Z",
-                },
-              },
+              parentId: "comment-one",
+              textOriginal: "It cleared up my confusion.",
+              authorDisplayName: "Reply two",
+              likeCount: 1,
+              publishedAt: "2026-01-03T14:00:00Z",
             },
           },
         ],
@@ -88,11 +160,37 @@ test("YouTubeDataClient retrieves and normalises official video data", async () 
   assert.equal(result.viewCount, 123456);
   assert.equal(result.likeCount, 9001);
   assert.equal(result.reportedCommentCount, 2);
-  assert.equal(result.comments.length, 2);
+  assert.equal(result.description, "A detailed example.");
+  assert.deepEqual(result.tags, ["example", "tutorial"]);
+  assert.equal(result.category.title, "Education");
+  assert.equal(result.durationSeconds, 210);
+  assert.equal(result.captionsAvailable, true);
+  assert.equal(result.thumbnail.quality, "maxres");
+  assert.equal(result.thumbnail.width, 1280);
+  assert.equal(result.comments.length, 3);
   assert.equal(result.comments[0].likeCount, 14);
-  assert.equal(requests.length, 2);
-  assert.equal(requests[0].searchParams.get("key"), "test-youtube-key");
-  assert.equal(requests[1].searchParams.get("order"), "relevance");
+  assert.deepEqual(result.comments[0].timestamps, [
+    { label: "1:20", seconds: 80 },
+  ]);
+  assert.equal(result.comments[0].replies.length, 2);
+  assert.equal(result.commentSampling.completeReplyThreads, 1);
+  assert.equal(result.commentSampling.sampledReplies, 2);
+  assert.equal(
+    requests.every(
+      (requestUrl) =>
+        requestUrl.searchParams.get("key") === "test-youtube-key",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    requests
+      .filter((requestUrl) =>
+        requestUrl.pathname.endsWith("/commentThreads"),
+      )
+      .map((requestUrl) => requestUrl.searchParams.get("order"))
+      .sort(),
+    ["relevance", "time"],
+  );
 });
 
 test("YouTubeDataClient treats disabled comments as an empty sample", async () => {
@@ -105,7 +203,12 @@ test("YouTubeDataClient treats disabled comments as an empty sample", async () =
             snippet: {
               title: "Comments disabled",
               channelTitle: "Example channel",
+              channelId: CHANNEL_ID,
               thumbnails: {},
+            },
+            contentDetails: {
+              duration: "PT1M",
+              caption: "false",
             },
             statistics: {
               viewCount: "10",

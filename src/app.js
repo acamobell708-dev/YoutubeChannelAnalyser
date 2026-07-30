@@ -73,7 +73,20 @@ export function createApp({ config, analyseVideo, analyseChannel }) {
     express.static(publicDirectory, {
       index: false,
       etag: true,
-      maxAge: "1h",
+      cacheControl: false,
+      setHeaders: (response, filePath) => {
+        if (path.extname(filePath).toLowerCase() === ".html") {
+          response.setHeader(
+            "Cache-Control",
+            "no-store, no-cache, must-revalidate, proxy-revalidate",
+          );
+          response.setHeader("Pragma", "no-cache");
+          response.setHeader("Expires", "0");
+          return;
+        }
+
+        response.setHeader("Cache-Control", "no-cache, must-revalidate");
+      },
     }),
   );
 

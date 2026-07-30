@@ -3,7 +3,10 @@ import {
   extractVideoId,
   validateYouTubeVideoUrl,
 } from "../domain/videoUrl.js";
-import { parseYouTubeChannelUrl } from "../domain/channelUrl.js";
+import {
+  CHANNEL_ID_PATTERN,
+  parseYouTubeChannelUrl,
+} from "../domain/channelUrl.js";
 import { TtlCache } from "./ttlCache.js";
 
 const API_ROOT = "https://www.googleapis.com/youtube/v3";
@@ -14,14 +17,28 @@ function asNonNegativeInteger(value, fallback = 0) {
 }
 
 function getBestThumbnail(thumbnails = {}) {
-  return (
-    thumbnails.maxres?.url ??
-    thumbnails.standard?.url ??
-    thumbnails.high?.url ??
-    thumbnails.medium?.url ??
-    thumbnails.default?.url ??
-    null
-  );
+  return getBestThumbnailDetails(thumbnails)?.url ?? null;
+}
+
+function getBestThumbnailDetails(thumbnails = {}) {
+  for (const quality of [
+    "maxres",
+    "standard",
+    "high",
+    "medium",
+    "default",
+  ]) {
+    const thumbnail = thumbnails[quality];
+    if (thumbnail?.url) {
+      return {
+        quality,
+        url: thumbnail.url,
+        width: asNonNegativeInteger(thumbnail.width, null),
+        height: asNonNegativeInteger(thumbnail.height, null),
+      };
+    }
+  }
+  return null;
 }
 
 async function readJson(response) {
@@ -78,16 +95,133 @@ function parseDurationSeconds(duration) {
   );
 }
 
+function extractCommentTimestamps(text, durationSeconds = null) {
+  const timestamps = [];
+  const seen = new Set();
+  const pattern = /(?:^|[^\d])(?:(\d{1,2}):)?(\d{1,2}):(\d{2})(?!\d)/g;
+  let match;
+
+  while ((match = pattern.exec(String(text ?? ""))) !== null) {
+    const hours = Number(match[1] ?? 0);
+    const minutes = Number(match[2]);
+    const seconds = Number(match[3]);
+    if (minutes > 59 && match[1] !== undefined) continue;
+    if (seconds > 59) continue;
+
+    const totalSeconds = hours * 3_600 + minutes * 60 + seconds;
+    if (
+      seen.has(totalSeconds) ||
+      (Number.isFinite(durationSeconds) &&
+        durationSeconds !== null &&
+        totalSeconds > durationSeconds + 5)
+    ) {
+      continue;
+    }
+    seen.add(totalSeconds);
+    timestamps.push({
+      label: match[0].trim(),
+      seconds: totalSeconds,
+    });
+  }
+
+  return timestamps;
+}
+
+function normaliseComment(comment, durationSeconds = null) {
+  const snippet = comment?.snippet;
+  const text = String(snippet?.textOriginal ?? "").trim();
+  if (!comment?.id || !text) return null;
+
+  return {
+    id: comment.id,
+    parentId: snippet?.parentId ?? null,
+    text,
+    author: String(snippet?.authorDisplayName ?? "Unknown").trim(),
+    likeCount: asNonNegativeInteger(snippet?.likeCount),
+    publishedAt: snippet?.publishedAt ?? null,
+    timestamps: extractCommentTimestamps(text, durationSeconds),
+  };
+}
+
+function selectStratifiedComments(relevant, recent, maxComments) {
+  const candidates = new Map();
+  for (const [group, items] of [
+    ["top", relevant],
+    ["recent", recent],
+  ]) {
+    for (const item of items) {
+      const existing = candidates.get(item.id);
+      if (existing) {
+        existing.candidateGroups.add(group);
+      } else {
+        candidates.set(item.id, {
+          ...item,
+          candidateGroups: new Set([group]),
+        });
+      }
+    }
+  }
+
+  const topQuota = Math.ceil(maxComments * 0.4);
+  const recentQuota = Math.ceil(maxComments * 0.35);
+  const likedQuota = Math.max(0, maxComments - topQuota - recentQuota);
+  const highlyLiked = [...candidates.values()].sort(
+    (left, right) =>
+      right.likeCount - left.likeCount ||
+      String(right.publishedAt).localeCompare(String(left.publishedAt)),
+  );
+  const selectedGroups = new Map();
+
+  function mark(items, group, limit) {
+    let marked = 0;
+    for (const item of items) {
+      if (marked >= limit) break;
+      const groups = selectedGroups.get(item.id) ?? new Set();
+      groups.add(group);
+      selectedGroups.set(item.id, groups);
+      marked += 1;
+    }
+  }
+
+  mark(relevant, "top", topQuota);
+  mark(recent, "recent", recentQuota);
+  mark(highlyLiked, "highlyLiked", likedQuota);
+
+  const orderedIds = [
+    ...relevant.slice(0, topQuota).map((item) => item.id),
+    ...recent.slice(0, recentQuota).map((item) => item.id),
+    ...highlyLiked.slice(0, likedQuota).map((item) => item.id),
+    ...relevant.map((item) => item.id),
+    ...recent.map((item) => item.id),
+  ];
+  const uniqueIds = [...new Set(orderedIds)].slice(0, maxComments);
+
+  return uniqueIds.map((id) => {
+    const candidate = candidates.get(id);
+    return {
+      ...candidate,
+      candidateGroups: undefined,
+      sampleGroups: [
+        ...(selectedGroups.get(id) ??
+          candidate.candidateGroups ??
+          new Set(["supplemental"])),
+      ],
+    };
+  });
+}
+
 export class YouTubeDataClient {
   constructor({
     apiKey,
     fetchImpl = fetch,
     channelCache = new TtlCache(),
+    videoCategoryCache = new TtlCache({ ttlMs: 24 * 60 * 60 * 1_000 }),
     channelBatchConcurrency = 4,
   }) {
     this.apiKey = apiKey;
     this.fetch = fetchImpl;
     this.channelCache = channelCache;
+    this.videoCategoryCache = videoCategoryCache;
     this.channelBatchConcurrency = channelBatchConcurrency;
   }
 
@@ -146,45 +280,40 @@ export class YouTubeDataClient {
     return payload;
   }
 
-  async fetchComments(videoId, maxComments) {
+  async fetchCommentThreadCandidates(
+    videoId,
+    { maxComments, order, durationSeconds },
+  ) {
     const comments = [];
     let pageToken;
 
     while (comments.length < maxComments) {
       const pageSize = Math.min(100, maxComments - comments.length);
-      let payload;
-
-      try {
-        payload = await this.request("commentThreads", {
-          part: "snippet",
-          videoId,
-          maxResults: pageSize,
-          order: "relevance",
-          textFormat: "plainText",
-          pageToken,
-          fields:
-            "nextPageToken,items(snippet(topLevelComment(snippet(textOriginal,authorDisplayName,likeCount,publishedAt))))",
-        });
-      } catch (error) {
-        if (
-          error instanceof AppError &&
-          error.code === "YOUTUBE_COMMENTS_DISABLED"
-        ) {
-          return [];
-        }
-        throw error;
-      }
+      const payload = await this.request("commentThreads", {
+        part: "snippet,replies",
+        videoId,
+        maxResults: pageSize,
+        order,
+        textFormat: "plainText",
+        pageToken,
+        fields:
+          "nextPageToken,items(id,snippet(totalReplyCount,topLevelComment(id,snippet(textOriginal,authorDisplayName,likeCount,publishedAt))),replies(comments(id,snippet(parentId,textOriginal,authorDisplayName,likeCount,publishedAt))))",
+      });
 
       for (const item of payload.items ?? []) {
-        const snippet = item?.snippet?.topLevelComment?.snippet;
-        const text = String(snippet?.textOriginal ?? "").trim();
-        if (!text) continue;
-
+        const topLevel = normaliseComment(
+          item?.snippet?.topLevelComment,
+          durationSeconds,
+        );
+        if (!topLevel) continue;
         comments.push({
-          text,
-          author: String(snippet?.authorDisplayName ?? "Unknown").trim(),
-          likeCount: asNonNegativeInteger(snippet?.likeCount),
-          publishedAt: snippet?.publishedAt ?? null,
+          ...topLevel,
+          totalReplyCount: asNonNegativeInteger(
+            item?.snippet?.totalReplyCount,
+          ),
+          replies: (item?.replies?.comments ?? [])
+            .map((reply) => normaliseComment(reply, durationSeconds))
+            .filter(Boolean),
         });
       }
 
@@ -195,14 +324,161 @@ export class YouTubeDataClient {
     return comments.slice(0, maxComments);
   }
 
+  async fetchCompleteReplies(
+    parentId,
+    { maxReplies = 200, durationSeconds } = {},
+  ) {
+    const replies = [];
+    let pageToken;
+
+    while (replies.length < maxReplies) {
+      const payload = await this.request("comments", {
+        part: "snippet",
+        parentId,
+        maxResults: Math.min(100, maxReplies - replies.length),
+        textFormat: "plainText",
+        pageToken,
+        fields:
+          "nextPageToken,items(id,snippet(parentId,textOriginal,authorDisplayName,likeCount,publishedAt))",
+      });
+      replies.push(
+        ...(payload.items ?? [])
+          .map((reply) => normaliseComment(reply, durationSeconds))
+          .filter(Boolean),
+      );
+      pageToken = payload.nextPageToken;
+      if (!pageToken || !(payload.items?.length > 0)) break;
+    }
+
+    return replies.slice(0, maxReplies);
+  }
+
+  async fetchComments(videoId, maxComments, { durationSeconds } = {}) {
+    let relevant;
+    let recent;
+    try {
+      [relevant, recent] = await Promise.all([
+        this.fetchCommentThreadCandidates(videoId, {
+          maxComments,
+          order: "relevance",
+          durationSeconds,
+        }),
+        this.fetchCommentThreadCandidates(videoId, {
+          maxComments,
+          order: "time",
+          durationSeconds,
+        }),
+      ]);
+    } catch (error) {
+      if (
+        error instanceof AppError &&
+        error.code === "YOUTUBE_COMMENTS_DISABLED"
+      ) {
+        return {
+          comments: [],
+          sampleBreakdown: { top: 0, recent: 0, highlyLiked: 0 },
+          sampledReplyCount: 0,
+          completeReplyThreadCount: 0,
+          truncatedReplyThreadCount: 0,
+          commentsDisabled: true,
+        };
+      }
+      throw error;
+    }
+
+    const comments = selectStratifiedComments(
+      relevant,
+      recent,
+      maxComments,
+    );
+    const materialThreads = comments
+      .filter(
+        (comment) =>
+          comment.totalReplyCount > comment.replies.length &&
+          (comment.totalReplyCount >= 2 ||
+            comment.likeCount > 0 ||
+            comment.text.includes("?")),
+      )
+      .sort(
+        (left, right) =>
+          right.totalReplyCount - left.totalReplyCount ||
+          right.likeCount - left.likeCount,
+      )
+      .slice(0, 8);
+
+    await mapWithConcurrency(materialThreads, 3, async (comment) => {
+      const completeReplies = await this.fetchCompleteReplies(comment.id, {
+        maxReplies: 200,
+        durationSeconds,
+      });
+      const merged = new Map(
+        [...comment.replies, ...completeReplies].map((reply) => [
+          reply.id,
+          reply,
+        ]),
+      );
+      comment.replies = [...merged.values()];
+    });
+
+    const sampleBreakdown = {
+      top: comments.filter((comment) =>
+        comment.sampleGroups.includes("top"),
+      ).length,
+      recent: comments.filter((comment) =>
+        comment.sampleGroups.includes("recent"),
+      ).length,
+      highlyLiked: comments.filter((comment) =>
+        comment.sampleGroups.includes("highlyLiked"),
+      ).length,
+    };
+    const sampledReplyCount = comments.reduce(
+      (total, comment) => total + comment.replies.length,
+      0,
+    );
+
+    return {
+      comments,
+      sampleBreakdown,
+      sampledReplyCount,
+      completeReplyThreadCount: materialThreads.filter(
+        (comment) => comment.replies.length >= comment.totalReplyCount,
+      ).length,
+      truncatedReplyThreadCount: materialThreads.filter(
+        (comment) => comment.replies.length < comment.totalReplyCount,
+      ).length,
+      commentsDisabled: false,
+    };
+  }
+
+  async fetchVideoCategory(categoryId) {
+    if (!categoryId) return null;
+    return this.videoCategoryCache.getOrCreate(
+      `video-category:${categoryId}`,
+      async () => {
+        const payload = await this.request("videoCategories", {
+          part: "snippet",
+          id: categoryId,
+          fields: "items(id,snippet(title))",
+        });
+        const item = payload.items?.[0];
+        return item
+          ? {
+              id: item.id,
+              title: String(item.snippet?.title ?? "Unknown category").trim(),
+            }
+          : { id: categoryId, title: "Unknown category" };
+      },
+    );
+  }
+
   async fetchVideo(rawUrl, { maxComments = 100 } = {}) {
     const sourceUrl = validateYouTubeVideoUrl(rawUrl);
     const expectedVideoId = extractVideoId(sourceUrl);
     const payload = await this.request("videos", {
-      part: "snippet,statistics",
+      part: "snippet,contentDetails,statistics",
       id: expectedVideoId,
       fields:
-        "items(id,snippet(title,channelTitle,publishedAt,thumbnails),statistics(viewCount,likeCount,commentCount))",
+        "items(id,snippet(title,description,channelTitle,channelId,publishedAt,tags,categoryId,thumbnails),contentDetails(duration,caption,definition),statistics(viewCount,likeCount,commentCount))",
     });
 
     const item = payload.items?.[0];
@@ -222,15 +498,35 @@ export class YouTubeDataClient {
       );
     }
 
-    const comments = await this.fetchComments(item.id, maxComments);
+    const durationIso = item.contentDetails?.duration ?? null;
+    const durationSeconds = parseDurationSeconds(durationIso);
+    const thumbnail = getBestThumbnailDetails(item.snippet?.thumbnails);
+    const [commentResult, category] = await Promise.all([
+      this.fetchComments(item.id, maxComments, { durationSeconds }),
+      this.fetchVideoCategory(item.snippet?.categoryId),
+    ]);
 
     return {
       sourceUrl,
       videoId: item.id,
       title,
       channel: String(item.snippet?.channelTitle ?? "Unknown").trim(),
+      channelId: String(item.snippet?.channelId ?? "").trim(),
+      description: String(item.snippet?.description ?? "").trim(),
       publishedAt: item.snippet?.publishedAt ?? null,
-      thumbnailUrl: getBestThumbnail(item.snippet?.thumbnails),
+      tags: Array.isArray(item.snippet?.tags)
+        ? item.snippet.tags.map((tag) => String(tag).trim()).filter(Boolean)
+        : [],
+      category: category ?? {
+        id: item.snippet?.categoryId ?? null,
+        title: "Uncategorised",
+      },
+      durationIso,
+      durationSeconds,
+      captionsAvailable: item.contentDetails?.caption === "true",
+      definition: item.contentDetails?.definition ?? null,
+      thumbnail,
+      thumbnailUrl: thumbnail?.url ?? null,
       viewCount,
       likeCount:
         item.statistics?.likeCount === undefined
@@ -240,7 +536,16 @@ export class YouTubeDataClient {
         item.statistics?.commentCount === undefined
           ? null
           : asNonNegativeInteger(item.statistics.commentCount),
-      comments,
+      comments: commentResult.comments,
+      commentSampling: {
+        requestedTopLevelComments: maxComments,
+        sampledTopLevelComments: commentResult.comments.length,
+        sampledReplies: commentResult.sampledReplyCount,
+        completeReplyThreads: commentResult.completeReplyThreadCount,
+        truncatedReplyThreads: commentResult.truncatedReplyThreadCount,
+        commentsDisabled: commentResult.commentsDisabled,
+        ...commentResult.sampleBreakdown,
+      },
     };
   }
 
@@ -313,8 +618,7 @@ export class YouTubeDataClient {
     );
   }
 
-  async fetchChannelUncached(rawUrl) {
-    const { sourceUrl, lookup } = parseYouTubeChannelUrl(rawUrl);
+  async fetchChannelByLookup({ sourceUrl, lookup }) {
     const channelPayload = await this.request("channels", {
       part: "snippet,contentDetails,statistics",
       [lookup.parameter]: lookup.value,
@@ -358,10 +662,34 @@ export class YouTubeDataClient {
     };
   }
 
+  async fetchChannelUncached(rawUrl) {
+    return this.fetchChannelByLookup(parseYouTubeChannelUrl(rawUrl));
+  }
+
   async fetchChannel(rawUrl) {
     const { sourceUrl } = parseYouTubeChannelUrl(rawUrl);
     return this.channelCache.getOrCreate(`channel:${sourceUrl}`, () =>
       this.fetchChannelUncached(sourceUrl),
+    );
+  }
+
+  async fetchChannelById(channelId) {
+    const normalisedChannelId = String(channelId ?? "").trim();
+    if (!CHANNEL_ID_PATTERN.test(normalisedChannelId)) {
+      throw new AppError(
+        "YouTube returned an invalid channel ID for this video.",
+        { status: 502, code: "INVALID_VIDEO_CHANNEL_ID" },
+      );
+    }
+
+    const sourceUrl = `https://www.youtube.com/channel/${normalisedChannelId}`;
+    return this.channelCache.getOrCreate(
+      `channel-id:${normalisedChannelId}`,
+      () =>
+        this.fetchChannelByLookup({
+          sourceUrl,
+          lookup: { parameter: "id", value: normalisedChannelId },
+        }),
     );
   }
 }
