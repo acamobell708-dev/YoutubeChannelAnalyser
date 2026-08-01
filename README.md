@@ -1,5 +1,9 @@
 # YouTube Signal Lab
 
+For a complete technical handover covering the current architecture, local
+OAuth testing, production OAuth publishing, and hosting prerequisites, see
+[docs/WEBAPP_HANDOVER.md](docs/WEBAPP_HANDOVER.md).
+
 This repository now contains two implementations:
 
 - `AgentTests/` is the original Python and `yt-dlp` command-line prototype.
@@ -14,14 +18,16 @@ YouTube video URL and displays:
 - lifetime view, like, and reported comment totals plus deterministic
   views-per-day, likes-per-100-views, and comments-per-100-views calculations;
 - lifetime view and comment ranks within the channel's public upload catalogue;
-- a clearly labelled live first-day snapshot for videos under 24 hours old, or
-  an explanation that historical first-day totals are unavailable publicly;
 - bounded top, recent, and highly liked comment samples, with complete replies
   retrieved for a limited set of materially useful threads;
-- a strict GPT-5.4 title-and-thumbnail assessment and tabular audience
-  classification; and
-- a final sanity check covering identifiers, metadata, calculations,
-  first-day limitations, and the structured AI response.
+- a strict GPT-5.4 title, thumbnail, and tag assessment with compact audience
+  classifications;
+- optional channel-owner Google sign-in for authorised caption retrieval,
+  transcript-based hook, clarity, structure, pacing, and timeline analysis;
+- economy and Heavy Analysis profiles, capped at 5,000 and 10,000 model tokens
+  per video respectively; and
+- a final sanity check covering identifiers, metadata, calculations, and the
+  structured AI response.
 
 The channel dashboard accepts an `@handle`, `/channel/ID`, or legacy `/user/`
 URL and displays:
@@ -89,18 +95,78 @@ Google's current setup references are:
 - [Enable an API](https://support.google.com/googleapi/answer/6158841)
 - [Create and restrict an API key](https://support.google.com/googleapi/answer/6158862)
 
+## Configure optional channel-owner Google OAuth
+
+Public Phase 1 analysis does not require a Google login. Phase 2 caption
+analysis is only attempted when the signed-in Google account owns the video's
+channel. Without a login, or when the account owns a different channel, every
+affected field is returned as **Unknown** and Phase 1 still runs.
+
+1. In the same Google Cloud project, open **APIs & Services → OAuth consent
+   screen** and configure the app. While its publishing status is **Testing**,
+   add the Google accounts that will sign in as test users.
+2. Open **APIs & Services → Credentials**, choose **Create credentials → OAuth
+   client ID**, and select **Web application**.
+3. Add this exact authorised redirect URI for local development:
+
+```text
+http://localhost:3000/auth/google/callback
+```
+
+4. Copy the client ID and client secret into the root `.env`. Generate a
+   separate random session-signing secret of at least 32 characters:
+
+```powershell
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+```dotenv
+GOOGLE_OAUTH_CLIENT_ID=your_google_oauth_client_id_here
+GOOGLE_OAUTH_CLIENT_SECRET=your_google_oauth_client_secret_here
+GOOGLE_OAUTH_REDIRECT_URI=http://localhost:3000/auth/google/callback
+SESSION_SECRET=paste_the_generated_random_value_here
+```
+
+The flow uses state validation, PKCE, an HttpOnly signed session cookie, a
+four-hour server-side session, and the narrow
+`youtube.force-ssl` scope. Google tokens never enter browser JavaScript or an
+API response. Sessions are intentionally held in memory for this local app, so
+restarting the server requires signing in again. A multi-instance production
+deployment should replace this with an encrypted shared session store and use
+an HTTPS redirect URI.
+
+YouTube's caption download endpoint permits authorised users with permission to
+edit the video. The server also verifies the signed-in account's owned channel
+ID before requesting the track. The YouTube Data API does not provide the video
+or audio binary, so visual/audio-only Phase 2 findings remain **Unknown** rather
+than being invented.
+
 ## Configure OpenAI
 
 Add the existing OpenAI API key to the same root `.env`:
 
 ```dotenv
 OPENAI_API_KEY=replace_with_your_openai_api_key
+OPENAI_ADMIN_KEY=optional_openai_organisation_admin_key
 OPENAI_VIDEO_MODEL=gpt-5.4
 OPENAI_CHANNEL_MODEL=gpt-5.4
 ```
 
 Both keys remain on the Node server and are never returned to the browser.
 The `.env` file is ignored by Git.
+
+The dashboard warns at 150,000 tokens used in a UTC day and blocks a request
+that would take usage beyond 200,000 tokens; it unlocks at 00:00 UTC. Without
+`OPENAI_ADMIN_KEY`, the server enforces this for requests made by this running
+application. Set an Organisation Admin key in production to also read the
+OpenAI Usage API's organisation-wide, current-day total.
+
+Video analysis uses one GPT request with no reasoning-token allocation. Economy
+mode uses a low-detail thumbnail, up to eight comment threads and 12 caption
+excerpts, with a 5,000-token ceiling. Heavy Analysis uses a high-detail
+thumbnail, up to 18 threads, two replies per thread and 24 caption excerpts,
+with a 10,000-token ceiling. Both profiles preflight-trim inputs and validate
+reported usage.
 
 ## Install and run
 
@@ -127,8 +193,8 @@ client, and starts the server:
 
 ## Tests
 
-The tests mock YouTube and OpenAI, so they do not require either API key and do
-not consume API quota or tokens:
+The tests mock YouTube, Google OAuth, and OpenAI, so they do not require keys,
+do not perform sign-in, and do not consume API quota or tokens:
 
 ```powershell
 npm test
@@ -157,6 +223,8 @@ The server uses:
 - `commentThreads.list` for bounded top, recent, and highly liked top-level
   comment candidates;
 - `comments.list` to complete a bounded set of reply threads; and
+- owner-authorised `captions.list` and `captions.download` calls for Phase 2;
+- `channels.list?mine=true` to verify the signed-in account owns the channel;
 - the OpenAI Responses API with a strict JSON schema for video packaging and
   audience interpretation, plus channel pattern analysis.
 
@@ -173,13 +241,6 @@ the bounded union of the retrieved relevance and recency candidates. Reply
 completion is capped and its complete/truncated coverage is reported in the
 response.
 
-The public YouTube Data API supplies current lifetime statistics rather than a
-historical snapshot of each video's first 24 hours. Consequently, the
-application never invents a first-day rank: it shows current totals while a
-video is still under 24 hours old and reports the historical limitation
-afterwards. Exact historical comparisons require snapshots collected by this
-application over time or creator-authorised analytics.
-
 Channel catalogue results are cached in memory for 15 minutes. This reduces
 repeat YouTube API calls while keeping the cache simple to replace with a
 shared store if the application is deployed across multiple server instances.
@@ -189,6 +250,10 @@ The JSON endpoints are:
 - `POST /api/video-analysis` with `{ "url": "...", "maxComments": 100 }`
 - `POST /api/channel-analysis` with `{ "url": "..." }`
 - `GET /api/health` for non-secret configuration readiness
+- `GET /api/daily-token-usage` for the non-secret daily quota status
+- `GET /api/auth/status` for non-secret owner-session status
+- `GET /auth/google/start` and `GET /auth/google/callback` for Google OAuth
+- `POST /api/auth/logout` to revoke and clear the local owner session
 
 ## TODO: comprehensive single-video analysis
 
@@ -206,8 +271,7 @@ a video succeeded or failed.
 - [ ] Compare the video with similar uploads from the same channel by age,
   duration, topic, and format.
 - [ ] Report channel-relative percentiles instead of judging raw totals alone.
-- [x] Report the video's lifetime view and comment ranks within the channel,
-  while explicitly marking unavailable historical first-day ranks.
+- [x] Report the video's lifetime view and comment ranks within the channel.
 - [x] Sample top, recent, and highly liked comments and retrieve complete reply
   threads where they materially affect the analysis.
 - [x] Classify audience feedback into praise, criticism, questions, confusion,
@@ -218,11 +282,12 @@ a video succeeded or failed.
 
 ### Phase 2: transcript, audio, and visual analysis
 
-- [ ] Accept a creator-provided transcript or an authorised source video/audio
-  file; do not assume the public YouTube API provides arbitrary transcripts.
+- [x] Retrieve an owner-authorised YouTube caption track after channel
+  ownership verification; otherwise report transcript-dependent fields as
+  Unknown.
 - [ ] Transcribe authorised audio and divide it into timestamped sections.
-- [ ] Evaluate the opening 15, 30, and 60 seconds for promise delivery and time
-  to first value.
+- [x] Produce bounded transcript-based hook, clarity, structure, pacing,
+  strongest/weakest moment, and hoverable timeline signals.
 - [ ] Identify repetition, digressions, unclear explanations, examples, calls
   to action, story structure, and potential Short-form clips.
 - [ ] Extract selected frames at intervals, scene changes, and important
@@ -233,7 +298,7 @@ a video succeeded or failed.
 
 ### Phase 3: creator-authorised YouTube Analytics
 
-- [ ] Add Google OAuth for channel owners without exposing refresh tokens to
+- [x] Add Google OAuth for channel owners without exposing refresh tokens to
   the browser.
 - [ ] Retrieve supported private metrics such as average view duration,
   average percentage viewed, shares, playlist activity, and subscribers gained

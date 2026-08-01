@@ -13,6 +13,7 @@ export class OpenAIAnalysisClient {
     input,
     reasoningEffort = "low",
     maxOutputTokens = 700,
+    returnUsage = false,
     errorCode = "OPENAI_ANALYSIS_ERROR",
     errorMessage = "OpenAI could not complete the analysis.",
   }) {
@@ -42,7 +43,19 @@ export class OpenAIAnalysisClient {
       });
     }
 
-    return text;
+    if (!returnUsage) return text;
+    const inputTokens = Number(response.usage?.input_tokens ?? 0);
+    const outputTokens = Number(response.usage?.output_tokens ?? 0);
+    return {
+      value: text,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens: Number(
+          response.usage?.total_tokens ?? inputTokens + outputTokens,
+        ),
+      },
+    };
   }
 
   async createStructured({
@@ -51,9 +64,11 @@ export class OpenAIAnalysisClient {
     input,
     schemaName,
     schema,
+    normalise,
     validate,
     reasoningEffort = "low",
     maxOutputTokens = 2_500,
+    returnUsage = false,
     errorCode = "OPENAI_STRUCTURED_ANALYSIS_ERROR",
     errorMessage = "OpenAI could not complete the structured analysis.",
   }) {
@@ -83,6 +98,16 @@ export class OpenAIAnalysisClient {
       });
     }
 
+    if (response.status === "incomplete") {
+      throw new AppError(
+        "OpenAI stopped before completing the structured analysis.",
+        {
+          status: 502,
+          code: "INCOMPLETE_OPENAI_STRUCTURED_ANALYSIS",
+        },
+      );
+    }
+
     const rawOutput = String(response.output_text ?? "").trim();
     if (!rawOutput) {
       throw new AppError("OpenAI returned an empty structured analysis.", {
@@ -105,8 +130,22 @@ export class OpenAIAnalysisClient {
       );
     }
 
+    let value;
     try {
-      validate?.(parsed);
+      value = normalise ? normalise(parsed) : parsed;
+    } catch (error) {
+      throw new AppError(
+        "OpenAI returned structured analysis that could not be normalised.",
+        {
+          status: 502,
+          code: "INVALID_OPENAI_STRUCTURED_ANALYSIS",
+          cause: error,
+        },
+      );
+    }
+
+    try {
+      validate?.(value);
     } catch (error) {
       if (error instanceof AppError) throw error;
       throw new AppError(
@@ -119,6 +158,18 @@ export class OpenAIAnalysisClient {
       );
     }
 
-    return parsed;
+    if (!returnUsage) return value;
+    const inputTokens = Number(response.usage?.input_tokens ?? 0);
+    const outputTokens = Number(response.usage?.output_tokens ?? 0);
+    return {
+      value,
+      usage: {
+        inputTokens,
+        outputTokens,
+        totalTokens: Number(
+          response.usage?.total_tokens ?? inputTokens + outputTokens,
+        ),
+      },
+    };
   }
 }

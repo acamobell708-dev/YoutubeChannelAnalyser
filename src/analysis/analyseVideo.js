@@ -13,23 +13,53 @@ function percentage(count, total) {
 export function createVideoAnalyser({
   youtubeClient,
   insightAnalyst,
+  captionService,
   now = Date.now,
 }) {
-  return async function analyseVideo({ url, maxComments }) {
+  return async function analyseVideo({
+    url,
+    maxComments,
+    ownerSessionId = null,
+    analysisMode = "economy",
+  }) {
     const commentLimit = parseCommentLimit(maxComments);
     const video = await youtubeClient.fetchVideo(url, {
       maxComments: commentLimit,
     });
+    const transcript = captionService
+      ? await captionService.fetchTranscript({
+          videoId: video.videoId,
+          channelId: video.channelId,
+          ownerSessionId,
+        })
+      : {
+          status: "unknown",
+          displayValue: "Unknown",
+          reason:
+            "Owner Google login is required for authorised caption analysis.",
+          source: null,
+          language: null,
+          segmentCount: 0,
+          segments: [],
+          text: "",
+        };
     const [channel, insightResult] = await Promise.all([
       youtubeClient.fetchChannelById(video.channelId),
-      insightAnalyst.analyse(video),
+      insightAnalyst.analyse(video, {
+        transcript,
+        mode: analysisMode,
+      }),
     ]);
     const metrics = calculateVideoMetrics(video, channel.videos, now);
+    const {
+      transcriptAnalysis = null,
+      ...phaseOneInsightAnalysis
+    } = insightResult.analysis;
     const insights = {
-      ...insightResult.analysis,
+      ...phaseOneInsightAnalysis,
       audience: {
-        ...insightResult.analysis.audience,
-        feedbackRows: insightResult.analysis.audience.feedbackRows.map(
+        ...phaseOneInsightAnalysis.audience,
+        feedbackRows: phaseOneInsightAnalysis.audience.feedbackRows.map(
           (row) => ({
             ...row,
             percentOfAnalysed: percentage(
@@ -40,6 +70,62 @@ export function createVideoAnalyser({
         ),
       },
     };
+    const transcriptSummary = {
+      status: transcript.status,
+      displayValue: transcript.displayValue,
+      reason: transcript.reason,
+      source: transcript.source,
+      language: transcript.language,
+      trackKind: transcript.trackKind ?? null,
+      isAutoSynced: transcript.isAutoSynced ?? null,
+      segmentCount: transcript.segmentCount,
+      analysedSegmentCount:
+        insightResult.suppliedTranscriptSegmentCount ?? 0,
+    };
+    const visualAnalysis = {
+      status: "unknown",
+      displayValue: "Unknown",
+      reason:
+        "YouTube Data API does not provide the video frames or audio, so visual and audio-only claims are not inferred.",
+    };
+    const unknownDimension = {
+      score: null,
+      displayValue: "Unknown",
+      finding: transcript.reason,
+    };
+    const phaseTwo = transcriptAnalysis
+      ? {
+          status: "analysed",
+          displayValue: "Analysed",
+          transcript: transcriptSummary,
+          summary: transcriptAnalysis.summary,
+          dimensions: {
+            hook: transcriptAnalysis.hook,
+            clarity: transcriptAnalysis.clarity,
+            structure: transcriptAnalysis.structure,
+            pacing: transcriptAnalysis.pacing,
+          },
+          timeline: transcriptAnalysis.timeline,
+          strongestMoment: transcriptAnalysis.strongestMoment,
+          weakestMoment: transcriptAnalysis.weakestMoment,
+          visualAnalysis,
+        }
+      : {
+          status: "unknown",
+          displayValue: "Unknown",
+          transcript: transcriptSummary,
+          summary: transcript.reason,
+          dimensions: {
+            hook: unknownDimension,
+            clarity: unknownDimension,
+            structure: unknownDimension,
+            pacing: unknownDimension,
+          },
+          timeline: [],
+          strongestMoment: null,
+          weakestMoment: null,
+          visualAnalysis,
+        };
 
     const result = {
       video: {
@@ -68,6 +154,13 @@ export function createVideoAnalyser({
       },
       metrics,
       insights,
+      phaseTwo,
+      tokenBudget: insightResult.tokenBudget ?? {
+        mode: "economy",
+        ceilingTokens: 5_000,
+        actualTotalTokens: null,
+        requestCount: 1,
+      },
     };
     const sanity = runSanityChecks(result);
 

@@ -26,17 +26,20 @@ export const VIDEO_INSIGHT_SCHEMA = {
         "thumbnailClarity",
         "titleThumbnailAlignment",
         "contentMismatchRisk",
+        "tagUsefulness",
+        "tagAssessment",
         "observation",
         "evidence",
         "limitation",
       ],
       properties: {
-        titleClarity: enumSchema(["clear", "mixed", "unclear"]),
+        titleClarity: enumSchema(["clear", "mixed", "unclear", "unknown"]),
         thumbnailClarity: enumSchema([
           "clear",
           "mixed",
           "unclear",
           "unavailable",
+          "unknown",
         ]),
         titleThumbnailAlignment: enumSchema([
           "strong",
@@ -50,6 +53,14 @@ export const VIDEO_INSIGHT_SCHEMA = {
           "high",
           "unknown",
         ]),
+        tagUsefulness: enumSchema([
+          "beneficial",
+          "mixed",
+          "limited",
+          "unavailable",
+          "unknown",
+        ]),
+        tagAssessment: { type: "string" },
         observation: { type: "string" },
         evidence: {
           type: "array",
@@ -141,8 +152,14 @@ export const VIDEO_INSIGHT_SCHEMA = {
 };
 
 const PACKAGING_ENUMS = {
-  titleClarity: new Set(["clear", "mixed", "unclear"]),
-  thumbnailClarity: new Set(["clear", "mixed", "unclear", "unavailable"]),
+  titleClarity: new Set(["clear", "mixed", "unclear", "unknown"]),
+  thumbnailClarity: new Set([
+    "clear",
+    "mixed",
+    "unclear",
+    "unavailable",
+    "unknown",
+  ]),
   titleThumbnailAlignment: new Set([
     "strong",
     "partial",
@@ -150,6 +167,13 @@ const PACKAGING_ENUMS = {
     "unknown",
   ]),
   contentMismatchRisk: new Set(["low", "medium", "high", "unknown"]),
+  tagUsefulness: new Set([
+    "beneficial",
+    "mixed",
+    "limited",
+    "unavailable",
+    "unknown",
+  ]),
 };
 const SENTIMENTS = new Set([
   "positive",
@@ -190,6 +214,7 @@ export function validateVideoInsightAnalysis(
     analysedCommentCount,
     allowedTimestampSeconds = [],
     hasThumbnail,
+    hasTags,
   },
 ) {
   requireObject(analysis, "analysis");
@@ -202,6 +227,7 @@ export function validateVideoInsightAnalysis(
     }
   }
   requireString(analysis.packaging.observation, "packaging.observation");
+  requireString(analysis.packaging.tagAssessment, "packaging.tagAssessment");
   requireString(analysis.packaging.limitation, "packaging.limitation");
   if (!Array.isArray(analysis.packaging.evidence)) {
     throw new Error("packaging.evidence must be an array");
@@ -216,6 +242,9 @@ export function validateVideoInsightAnalysis(
     throw new Error(
       "thumbnailClarity must be unavailable when no thumbnail was supplied",
     );
+  }
+  if (!hasTags && analysis.packaging.tagUsefulness !== "unavailable") {
+    throw new Error("tagUsefulness must be unavailable when no tags were supplied");
   }
 
   requireString(

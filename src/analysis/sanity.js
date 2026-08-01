@@ -2,7 +2,13 @@ import { extractVideoId } from "../domain/videoUrl.js";
 import { CHANNEL_ID_PATTERN } from "../domain/channelUrl.js";
 import { FEEDBACK_CATEGORIES } from "./videoInsightSchema.js";
 
-export function runSanityChecks({ video, metrics, insights }) {
+export function runSanityChecks({
+  video,
+  metrics,
+  insights,
+  phaseTwo,
+  tokenBudget,
+}) {
   const checks = [];
   const errors = [];
 
@@ -64,18 +70,6 @@ export function runSanityChecks({ video, metrics, insights }) {
     errors.push("derived performance metrics are missing or inconsistent");
   }
 
-  if (
-    ["live_snapshot", "historical_unavailable", "unavailable"].includes(
-      metrics.first24Hours?.status,
-    ) &&
-    metrics.first24Hours?.viewRank === null &&
-    metrics.first24Hours?.commentRank === null
-  ) {
-    checks.push("first-24-hour limitation is represented without a fake rank");
-  } else {
-    errors.push("first-24-hour result contains an unsupported public rank");
-  }
-
   const feedbackRows = insights?.audience?.feedbackRows;
   const feedbackCategories = new Set(
     Array.isArray(feedbackRows)
@@ -101,6 +95,47 @@ export function runSanityChecks({ video, metrics, insights }) {
     checks.push("GPT-5.4 output passed the required structured shape");
   } else {
     errors.push("GPT-5.4 output is incomplete or incorrectly structured");
+  }
+
+  const supportedBudget =
+    (tokenBudget?.mode === "economy" && tokenBudget?.ceilingTokens === 5_000) ||
+    (tokenBudget?.mode === "heavy" && tokenBudget?.ceilingTokens === 10_000);
+  if (
+    supportedBudget &&
+    tokenBudget?.requestCount === 1 &&
+    (tokenBudget.actualTotalTokens === null ||
+      (Number.isInteger(tokenBudget.actualTotalTokens) &&
+        tokenBudget.actualTotalTokens >= 0 &&
+        tokenBudget.actualTotalTokens <= tokenBudget.ceilingTokens))
+  ) {
+    checks.push(`${tokenBudget.mode} mode stayed within its token ceiling`);
+  } else {
+    errors.push("economy token budget is missing or invalid");
+  }
+
+  const phaseTwoDimensions = phaseTwo?.dimensions;
+  if (
+    phaseTwo?.status === "unknown" &&
+    ["hook", "clarity", "structure", "pacing"].every(
+      (key) =>
+        phaseTwoDimensions?.[key]?.score === null &&
+        phaseTwoDimensions?.[key]?.displayValue === "Unknown",
+    )
+  ) {
+    checks.push("owner-dependent analytics use the Unknown placeholder");
+  } else if (
+    phaseTwo?.status === "analysed" &&
+    ["hook", "clarity", "structure", "pacing"].every(
+      (key) =>
+        Number.isInteger(phaseTwoDimensions?.[key]?.score) &&
+        phaseTwoDimensions[key].score >= 0 &&
+        phaseTwoDimensions[key].score <= 100,
+    ) &&
+    phaseTwo?.transcript?.source === "youtube_owner_captions"
+  ) {
+    checks.push("owner transcript analytics passed local score validation");
+  } else {
+    errors.push("Phase 2 analytics are missing or incorrectly structured");
   }
 
   return {

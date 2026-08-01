@@ -1,5 +1,7 @@
 import { OpenAIAnalysisClient } from "./openAIAnalysisClient.js";
 
+const CHANNEL_ANALYSIS_TOKEN_CEILING = 5_000;
+
 function compactVideo(video) {
   return {
     title: video.title,
@@ -18,10 +20,12 @@ export class ChannelPerformanceAnalyst {
     model = "gpt-5.4",
     client,
     analysisClient,
+    dailyTokenQuota = null,
   }) {
     this.analysisClient =
       analysisClient ?? new OpenAIAnalysisClient({ apiKey, client });
     this.model = model;
+    this.dailyTokenQuota = dailyTokenQuota;
   }
 
   async analyse({ channel, topByViews, topByComments }) {
@@ -49,15 +53,25 @@ export class ChannelPerformanceAnalyst {
       "END UNTRUSTED TOP VIDEOS BY COMMENT COUNT",
     ].join("\n");
 
-    return this.analysisClient.createText({
-      model: this.model,
-      instructions,
-      input,
-      reasoningEffort: "low",
-      maxOutputTokens: 900,
-      errorCode: "OPENAI_CHANNEL_ANALYSIS_ERROR",
-      errorMessage:
-        "OpenAI could not analyse the channel rankings. Check the API key, account balance, GPT-5.4 access, and server connection.",
-    });
+    const reservation = this.dailyTokenQuota
+      ? await this.dailyTokenQuota.reserve(CHANNEL_ANALYSIS_TOKEN_CEILING)
+      : null;
+    let result;
+    try {
+      result = await this.analysisClient.createText({
+        model: this.model,
+        instructions,
+        input,
+        reasoningEffort: "low",
+        maxOutputTokens: 900,
+        returnUsage: true,
+        errorCode: "OPENAI_CHANNEL_ANALYSIS_ERROR",
+        errorMessage:
+          "OpenAI could not analyse the channel rankings. Check the API key, account balance, GPT-5.4 access, and server connection.",
+      });
+      return result.value;
+    } finally {
+      reservation?.settle(result?.usage?.totalTokens ?? null);
+    }
   }
 }

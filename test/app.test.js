@@ -12,6 +12,9 @@ const readyConfig = {
   hasOpenAIApiKey: true,
   openaiVideoModel: "gpt-5.4",
   openaiChannelModel: "gpt-5.4",
+  hasGoogleOAuth: false,
+  googleOAuthRedirectUri: "http://localhost:3000/auth/google/callback",
+  sessionSecret: "",
 };
 
 test("health endpoint reports readiness without exposing API keys", async () => {
@@ -33,6 +36,29 @@ test("health endpoint reports readiness without exposing API keys", async () => 
   assert.equal(JSON.stringify(response.body).includes("api-key"), false);
 });
 
+test("daily token usage endpoint exposes quota state without secrets", async () => {
+  const dailyTokenQuota = {
+    getStatus: async () => ({
+      usedTokens: 150_000,
+      projectedTokens: 150_000,
+      warning: true,
+      locked: false,
+      limit: 200_000,
+      source: "this application",
+    }),
+  };
+  const app = createApp({
+    config: readyConfig,
+    dailyTokenQuota,
+    analyseVideo: async () => ({}) ,
+    analyseChannel: async () => ({}),
+  });
+
+  const response = await request(app).get("/api/daily-token-usage").expect(200);
+  assert.equal(response.body.usage.warning, true);
+  assert.equal(JSON.stringify(response.body).includes("admin-key"), false);
+});
+
 test("video dashboard and generated assets are always revalidated", async () => {
   const app = createApp({
     config: readyConfig,
@@ -47,7 +73,7 @@ test("video dashboard and generated assets are always revalidated", async () => 
   const page = await request(app).get("/VideoDashboard.html").expect(200);
   assert.match(page.headers["cache-control"], /no-store/);
   assert.equal(page.headers.pragma, "no-cache");
-  assert.match(page.text, /phase1-compact-20260730/);
+  assert.match(page.text, /phase2-economy-20260730/);
 
   const asset = await request(app)
     .get("/assets/VideoDashboard.js")
@@ -63,9 +89,10 @@ test("analysis endpoint returns a mocked successful result", async () => {
   };
   const app = createApp({
     config: readyConfig,
-    analyseVideo: async ({ url, maxComments }) => {
+    analyseVideo: async ({ url, maxComments, analysisMode }) => {
       assert.match(url, /youtube\.com/);
       assert.equal(maxComments, 50);
+      assert.equal(analysisMode, "heavy");
       return expected;
     },
     analyseChannel: async () => {
@@ -78,6 +105,7 @@ test("analysis endpoint returns a mocked successful result", async () => {
     .send({
       url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
       maxComments: 50,
+      analysisMode: "heavy",
     })
     .expect(200);
 
@@ -137,4 +165,78 @@ test("analysis endpoint explains missing server configuration", async () => {
   assert.equal(response.body.error.code, "CONFIGURATION_REQUIRED");
   assert.match(response.body.error.message, /YOUTUBE_API_KEY/);
   assert.match(response.body.error.message, /OPENAI_API_KEY/);
+});
+
+test("owner OAuth session stays in an HttpOnly cookie and reaches analysis", async () => {
+  const oauthConfig = {
+    ...readyConfig,
+    hasGoogleOAuth: true,
+    sessionSecret: "s".repeat(32),
+  };
+  let receivedOwnerSessionId;
+  const googleOAuthService = {
+    configured: true,
+    beginAuthorization: () => ({
+      state: "valid-state",
+      url: "https://accounts.google.com/o/oauth2/v2/auth?state=valid-state",
+    }),
+    completeAuthorization: async ({ code, state, expectedState }) => {
+      assert.equal(code, "one-use-code");
+      assert.equal(state, "valid-state");
+      assert.equal(expectedState, "valid-state");
+      return { sessionId: "server-only-session-id" };
+    },
+    getStatus: (sessionId) => ({
+      configured: true,
+      connected: sessionId === "server-only-session-id",
+      channels:
+        sessionId === "server-only-session-id"
+          ? [{ id: CHANNEL_ID, title: "Owner channel" }]
+          : [],
+    }),
+    logout: async () => undefined,
+  };
+  const app = createApp({
+    config: oauthConfig,
+    googleOAuthService,
+    analyseVideo: async ({ ownerSessionId, analysisMode }) => {
+      receivedOwnerSessionId = ownerSessionId;
+      assert.equal(analysisMode, "economy");
+      return { sanity: { passed: true } };
+    },
+    analyseChannel: async () => {
+      throw new Error("not called");
+    },
+  });
+  const agent = request.agent(app);
+
+  const start = await agent.get("/auth/google/start").expect(302);
+  assert.match(start.headers["set-cookie"].join(" "), /HttpOnly/i);
+  assert.match(start.headers["set-cookie"].join(" "), /SameSite=Lax/i);
+
+  const callback = await agent
+    .get(
+      "/auth/google/callback?code=one-use-code&state=valid-state",
+    )
+    .expect(302);
+  assert.equal(
+    callback.headers.location,
+    "/VideoDashboard.html?owner=connected",
+  );
+  const sessionCookie = callback.headers["set-cookie"].join(" ");
+  assert.match(sessionCookie, /ytsa_owner_session=/);
+  assert.match(sessionCookie, /HttpOnly/i);
+  assert.doesNotMatch(sessionCookie, /private-access-token/);
+
+  const status = await agent.get("/api/auth/status").expect(200);
+  assert.equal(status.body.ownerAuth.connected, true);
+
+  await agent
+    .post("/api/video-analysis")
+    .send({
+      url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      maxComments: 10,
+    })
+    .expect(200);
+  assert.equal(receivedOwnerSessionId, "server-only-session-id");
 });

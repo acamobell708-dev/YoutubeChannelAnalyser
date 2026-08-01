@@ -51,6 +51,29 @@ function formatRank(ranking) {
     : "Unavailable";
 }
 
+function formatTimestamp(seconds) {
+  if (!Number.isInteger(seconds) || seconds < 0) return "Unknown";
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function DailyUsageNotice({ usage }) {
+  if (!usage?.warning) return null;
+  const used = formatNumber(usage.projectedTokens ?? usage.usedTokens);
+  const limit = formatNumber(usage.limit);
+  return (
+    <div className={`daily-usage-notice ${usage.locked ? "locked" : ""}`} role="status">
+      <strong>{usage.locked ? "Daily analysis limit reached" : "Daily token warning"}</strong>
+      <span>
+        {used} of {limit} tokens used today ({usage.source}).
+        {usage.locked
+          ? " New analyses unlock at 00:00 UTC."
+          : " New analyses will lock at 200,000 tokens."}
+      </span>
+    </div>
+  );
+}
+
 function EmptyStage() {
   return (
     <section className="empty-stage" aria-label="What the dashboard analyses">
@@ -123,18 +146,6 @@ function Metric({ label, value, annotation }) {
   );
 }
 
-function FactRow({ label, value, note }) {
-  return (
-    <tr>
-      <th scope="row">{label}</th>
-      <td>
-        <strong>{value}</strong>
-        {note && <small>{note}</small>}
-      </td>
-    </tr>
-  );
-}
-
 function CompactMetric({ label, value, note, tooltip }) {
   return (
     <div
@@ -200,18 +211,15 @@ function RankMeter({ label, ranking, noun }) {
   );
 }
 
-function PhaseOneScorecard({ video, metrics }) {
-  const firstDay = metrics.first24Hours;
-  const live = firstDay.status === "live_snapshot";
-
+function PhaseOneScorecard({ video, metrics, packaging }) {
   return (
     <article className="phase-one-card">
       <div className="compact-heading phase-one-heading">
         <div>
-          <p className="eyebrow">Phase 1 / at a glance</p>
+          <p className="eyebrow">Video Stats / at a glance</p>
           <h2>Performance snapshot</h2>
         </div>
-        <p>Hover for a definition. Click below for the calculation details.</p>
+        <p>Hover over each performance item for its definition.</p>
       </div>
 
       <div className="compact-metric-grid">
@@ -248,85 +256,48 @@ function PhaseOneScorecard({ video, metrics }) {
         />
       </div>
 
-      <div className={`first-day-inline ${live ? "live" : ""}`}>
-        <span>First 24 hours</span>
-        <strong>
-          {live
-            ? `${formatNumber(firstDay.viewsObserved)} views · ${formatNumber(
-                firstDay.commentsObserved,
-              )} comments at ${formatRate(firstDay.observedAtAgeHours)}h`
-            : "Historical comparison unavailable"}
-        </strong>
-        <p title={firstDay.explanation}>{firstDay.explanation}</p>
+      <div className="metadata-grid" aria-label="Public video metadata">
+        <div className="metadata-box">
+          <span>Category</span>
+          <strong>{video.category.title}</strong>
+        </div>
+        <div className="metadata-box">
+          <span>Duration</span>
+          <strong>{formatDuration(video.durationSeconds)}</strong>
+        </div>
+        <div className="metadata-box">
+          <span>Public caption flag</span>
+          <strong>{video.captionsAvailable ? "Available" : "Not flagged"}</strong>
+          <small>Owner transcript access is checked separately.</small>
+        </div>
+        <div className="metadata-box">
+          <span>Thumbnail</span>
+          <strong>{humanise(video.thumbnail?.quality ?? "unavailable")}</strong>
+          {video.thumbnail?.width && video.thumbnail?.height ? (
+            <small>{video.thumbnail.width} × {video.thumbnail.height}px</small>
+          ) : null}
+        </div>
       </div>
 
-      <details className="detail-drawer dark-drawer">
-        <summary>
-          <span>Calculations and public metadata</span>
-          <small>Open details</small>
-        </summary>
-        <div className="drawer-grid">
-          <section>
-            <h3>How the figures are calculated</h3>
-            <table className="fact-table">
-              <tbody>
-                <FactRow
-                  label="Views per day"
-                  value="views ÷ age in days"
-                  note="A minimum age of one minute prevents division by zero."
-                />
-                <FactRow
-                  label="Likes / 100"
-                  value="likes ÷ views × 100"
-                />
-                <FactRow
-                  label="Comments / 100"
-                  value="comments ÷ views × 100"
-                />
-                <FactRow
-                  label="Channel rank"
-                  value="1 + videos with a higher total"
-                  note="Equal totals receive the same rank."
-                />
-              </tbody>
-            </table>
-          </section>
-          <section>
-            <h3>Public video metadata</h3>
-            <table className="fact-table">
-              <tbody>
-                <FactRow label="Category" value={video.category.title} />
-                <FactRow label="Duration" value={formatDuration(video.durationSeconds)} />
-                <FactRow
-                  label="Captions"
-                  value={video.captionsAvailable ? "Available" : "Not available"}
-                />
-                <FactRow
-                  label="Thumbnail"
-                  value={humanise(video.thumbnail?.quality ?? "unavailable")}
-                  note={
-                    video.thumbnail?.width && video.thumbnail?.height
-                      ? `${video.thumbnail.width} × ${video.thumbnail.height}px`
-                      : null
-                  }
-                />
-              </tbody>
-            </table>
-            <div className="tag-section">
-              <span>Tags</span>
-              {video.tags.length ? (
-                <div className="tag-list">
-                  {video.tags.map((tag) => (
-                    <span key={tag}>{tag}</span>
-                  ))}
-                </div>
-              ) : (
-                <p>No public tags were returned.</p>
-              )}
-            </div>
-          </section>
+      <div className="tag-assessment">
+        <div className="tag-assessment-copy">
+          <span>Selected tags</span>
+          <strong className={`tag-verdict ${packaging.tagUsefulness}`}>
+            {humanise(packaging.tagUsefulness)}
+          </strong>
+          <p>{packaging.tagAssessment}</p>
         </div>
-      </details>
+        {video.tags.length ? (
+          <div className="tag-list" aria-label="Selected public tags">
+            {video.tags.slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}
+            {video.tags.length > 8 ? (
+              <span className="tag-more">+{video.tags.length - 8} more</span>
+            ) : null}
+          </div>
+        ) : (
+          <p className="no-tags">No public tags were returned.</p>
+        )}
+      </div>
     </article>
   );
 }
@@ -334,7 +305,8 @@ function PhaseOneScorecard({ video, metrics }) {
 function InsightDigest({ packaging, audience, sampling }) {
   const visibleFeedback = audience.feedbackRows
     .filter((row) => row.count > 0)
-    .sort((left, right) => right.count - left.count);
+    .sort((left, right) => right.count - left.count)
+    .slice(0, 4);
 
   return (
     <article className="insight-digest">
@@ -383,28 +355,21 @@ function InsightDigest({ packaging, audience, sampling }) {
 
       <details className="detail-drawer light-drawer">
         <summary>
-          <span>AI evidence, classifications, and sample coverage</span>
+          <span>Evidence and sample details</span>
           <small>Open details</small>
         </summary>
         <div className="insight-details">
           <section>
-            <h3>Title and thumbnail assessment</h3>
-            <div className="table-scroll light-table-scroll">
-              <table className="insight-table">
-                <thead>
-                  <tr><th scope="col">Measure</th><th scope="col">Assessment</th></tr>
-                </thead>
-                <tbody>
-                  <tr><th scope="row">Title clarity</th><td>{humanise(packaging.titleClarity)}</td></tr>
-                  <tr><th scope="row">Thumbnail clarity</th><td>{humanise(packaging.thumbnailClarity)}</td></tr>
-                  <tr><th scope="row">Title / thumbnail alignment</th><td>{humanise(packaging.titleThumbnailAlignment)}</td></tr>
-                  <tr><th scope="row">Possible mismatch risk</th><td>{humanise(packaging.contentMismatchRisk)}</td></tr>
-                </tbody>
-              </table>
+            <h3>Packaging evidence</h3>
+            <div className="compact-assessments">
+              <span>Title <b>{humanise(packaging.titleClarity)}</b></span>
+              <span>Thumbnail <b>{humanise(packaging.thumbnailClarity)}</b></span>
+              <span>Alignment <b>{humanise(packaging.titleThumbnailAlignment)}</b></span>
+              <span>Mismatch <b>{humanise(packaging.contentMismatchRisk)}</b></span>
             </div>
             {packaging.evidence.length > 0 && (
               <ul className="evidence-list">
-                {packaging.evidence.map((evidence) => (
+                {packaging.evidence.slice(0, 3).map((evidence) => (
                   <li key={evidence}>{evidence}</li>
                 ))}
               </ul>
@@ -413,62 +378,31 @@ function InsightDigest({ packaging, audience, sampling }) {
           </section>
 
           <section>
-            <h3>Audience classifications</h3>
+            <h3>Audience signals</h3>
             <p className="table-note">
-              Categories may overlap, so percentages do not need to total 100%.
+              Showing classifications found in the analysed sample; categories can overlap.
             </p>
-            <div className="table-scroll light-table-scroll">
-              <table className="insight-table audience-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Feedback</th>
-                    <th scope="col">Threads</th>
-                    <th scope="col">Sample</th>
-                    <th scope="col">Pattern</th>
-                    <th scope="col">Confidence</th>
-                    <th scope="col">Observation</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {audience.feedbackRows.map((row) => (
-                    <tr key={row.category}>
-                      <th scope="row">{feedbackLabels[row.category]}</th>
-                      <td>{formatNumber(row.count)}</td>
-                      <td>{formatRate(row.percentOfAnalysed, "%")}</td>
-                      <td>{humanise(row.prevalence)}</td>
-                      <td>{humanise(row.confidence)}</td>
-                      <td>{row.observation}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="signal-summary-grid">
+              {visibleFeedback.length ? visibleFeedback.map((row) => (
+                <div key={row.category}>
+                  <strong>{feedbackLabels[row.category]} · {formatNumber(row.count)}</strong>
+                  <small>{humanise(row.confidence)} confidence</small>
+                  <p>{row.observation}</p>
+                </div>
+              )) : <p>No recurring audience signals were classified.</p>}
             </div>
           </section>
 
           {audience.timestampedReactions.length > 0 && (
             <section>
               <h3>Timestamped reactions</h3>
-              <div className="table-scroll light-table-scroll">
-                <table className="insight-table timestamp-table">
-                  <thead>
-                    <tr>
-                      <th scope="col">Time</th>
-                      <th scope="col">Sentiment</th>
-                      <th scope="col">Threads</th>
-                      <th scope="col">Observation</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {audience.timestampedReactions.map((reaction) => (
-                      <tr key={`${reaction.seconds}-${reaction.observation}`}>
-                        <th scope="row">{reaction.timestamp}</th>
-                        <td>{humanise(reaction.sentiment)}</td>
-                        <td>{formatNumber(reaction.commentCount)}</td>
-                        <td>{reaction.observation}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="reaction-list">
+                {audience.timestampedReactions.slice(0, 3).map((reaction) => (
+                  <p key={`${reaction.seconds}-${reaction.observation}`}>
+                    <b>{reaction.timestamp} · {humanise(reaction.sentiment)}</b>
+                    {reaction.observation}
+                  </p>
+                ))}
               </div>
             </section>
           )}
@@ -487,8 +421,8 @@ function InsightDigest({ packaging, audience, sampling }) {
               “Highly liked” is selected from the bounded top and recent
               candidate pool because YouTube has no global likes-sorted feed.
             </p>
-            <ul className="limitation-list">
-              {audience.limitations.map((limitation) => (
+            <ul className="limitation-list compact-limitations">
+              {audience.limitations.slice(0, 3).map((limitation) => (
                 <li key={limitation}>{limitation}</li>
               ))}
             </ul>
@@ -499,8 +433,165 @@ function InsightDigest({ packaging, audience, sampling }) {
   );
 }
 
+function ScoreRing({ label, value }) {
+  const known = Number.isInteger(value?.score);
+  const tooltip = known
+    ? `${label}: ${value.score}/100. ${value.finding}`
+    : `${label}: Unknown. ${value?.finding || "Owner transcript unavailable."}`;
+  return (
+    <div
+      className={`phase-two-score hover-help ${known ? "" : "unknown"}`}
+      data-tip={tooltip}
+      tabIndex="0"
+    >
+      <div
+        className="score-ring"
+        style={{ "--score": known ? value.score : 0 }}
+        role="img"
+        aria-label={tooltip}
+      >
+        <strong>{known ? value.score : "?"}</strong>
+      </div>
+      <span>{label}</span>
+    </div>
+  );
+}
+
+function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
+  const dimensions = phaseTwo.dimensions;
+  const actualTokens = tokenBudget.actualTotalTokens;
+  const usagePercent = Number.isInteger(actualTokens)
+    ? Math.min(100, (actualTokens / tokenBudget.ceilingTokens) * 100)
+    : 0;
+
+  return (
+    <article className="phase-two-card">
+      <div className="compact-heading phase-two-heading">
+        <div>
+          <p className="eyebrow">AI Video Analysis / owner evidence</p>
+          <h2>Video structure analysis</h2>
+        </div>
+        <span className="economy-badge">
+          {humanise(tokenBudget.mode)} · ≤{formatNumber(tokenBudget.ceilingTokens)} tokens
+        </span>
+      </div>
+
+      <div className="phase-two-layout">
+        <div className="score-ring-grid">
+          <ScoreRing label="Hook" value={dimensions.hook} />
+          <ScoreRing label="Clarity" value={dimensions.clarity} />
+          <ScoreRing label="Structure" value={dimensions.structure} />
+          <ScoreRing label="Pacing" value={dimensions.pacing} />
+        </div>
+        <div className="phase-two-summary">
+          <span className={`evidence-state ${phaseTwo.status}`}>
+            Transcript: {phaseTwo.transcript.displayValue}
+          </span>
+          <p>{phaseTwo.summary}</p>
+          <small>
+            Visual/audio analysis: {phaseTwo.visualAnalysis.displayValue}
+          </small>
+        </div>
+      </div>
+
+      <p className="phase-two-score-guide">
+        <b>How to read this:</b> Hook, clarity, structure, and pacing are
+        0–100 observations from the supplied caption excerpts: lower scores
+        suggest weaker evidence (for example, a 10/100 Hook is a weak opening);
+        higher scores suggest stronger evidence. Timeline timestamps show where
+        each caption excerpt occurs, not audience retention.
+      </p>
+
+      {phaseTwo.timeline.length > 0 && (
+        <div className="timeline-panel">
+          <div className="timeline-title">
+            <span>Transcript signal over time</span>
+            <small>0–100 evidence observations, not viewer retention</small>
+          </div>
+          <div
+            className="timeline-chart"
+            role="img"
+            aria-label="Transcript evidence scores over the video timeline"
+          >
+            {phaseTwo.timeline.map((point) => (
+              <span
+                key={`${point.atSeconds}-${point.label}`}
+                className={`timeline-column hover-help ${
+                  point.score < 10 ? "low-score" : ""
+                }`}
+                style={{ "--height": `${point.score}%` }}
+                data-tip={`${formatTimestamp(point.atSeconds)} · ${
+                  point.score
+                }/100 · ${point.label}`}
+                tabIndex="0"
+              >
+                {point.score < 10 && (
+                  <b className="timeline-score-above">{point.score}/100</b>
+                )}
+                <i aria-hidden="true">
+                  {point.score >= 10 && <b>{point.score}/100</b>}
+                </i>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <details className="detail-drawer light-drawer phase-two-details">
+        <summary>
+          <span>Evidence, limitations, and token usage</span>
+          <small>Open details</small>
+        </summary>
+        <div className="phase-two-detail-grid">
+          <section>
+            <h3>Strongest / weakest transcript evidence</h3>
+            {phaseTwo.strongestMoment ? (
+              <p>
+                <b>{formatTimestamp(phaseTwo.strongestMoment.atSeconds)}</b>{" "}
+                {phaseTwo.strongestMoment.finding}
+              </p>
+            ) : (
+              <p><b>Strongest:</b> Unknown — the model timestamp could not be verified.</p>
+            )}
+            {phaseTwo.weakestMoment ? (
+              <p>
+                <b>{formatTimestamp(phaseTwo.weakestMoment.atSeconds)}</b>{" "}
+                {phaseTwo.weakestMoment.finding}
+              </p>
+            ) : (
+              <p><b>Weakest:</b> Unknown — the model timestamp could not be verified.</p>
+            )}
+          </section>
+          <section>
+            <h3>Budget and source</h3>
+            <div className="token-track" title="Reported model-token usage">
+              <span style={{ width: `${usagePercent}%` }}></span>
+            </div>
+            <p>
+              {Number.isInteger(actualTokens)
+                ? `${formatNumber(actualTokens)} of ${formatNumber(
+                    tokenBudget.ceilingTokens,
+                  )} model tokens used`
+                : `Hard request controls target no more than ${formatNumber(
+                    tokenBudget.ceilingTokens,
+                  )} model tokens.`}
+            </p>
+            <p>
+              Caption source:{" "}
+              {phaseTwo.transcript.source === "youtube_owner_captions"
+                ? "YouTube owner-authorised captions"
+                : "Unknown"}
+              . {phaseTwo.visualAnalysis.reason}
+            </p>
+          </section>
+        </div>
+      </details>
+    </article>
+  );
+}
+
 function ResultStage({ analysis }) {
-  const { video, metrics, insights } = analysis;
+  const { video, metrics, insights, phaseTwo, tokenBudget } = analysis;
 
   return (
     <section className="result-stage">
@@ -540,7 +631,12 @@ function ResultStage({ analysis }) {
         </div>
       </article>
 
-      <PhaseOneScorecard video={video} metrics={metrics} />
+      <PhaseOneScorecard
+        video={video}
+        metrics={metrics}
+        packaging={insights.packaging}
+      />
+      <PhaseTwoCompact phaseTwo={phaseTwo} tokenBudget={tokenBudget} />
       <InsightDigest
         packaging={insights.packaging}
         audience={insights.audience}
@@ -555,7 +651,10 @@ function ResultStage({ analysis }) {
 function App() {
   const [url, setUrl] = useState("");
   const [maxComments, setMaxComments] = useState(100);
+  const [analysisMode, setAnalysisMode] = useState("economy");
   const [configuration, setConfiguration] = useState(null);
+  const [ownerAuth, setOwnerAuth] = useState(null);
+  const [dailyUsage, setDailyUsage] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -563,10 +662,17 @@ function App() {
   useEffect(() => {
     let active = true;
 
-    fetch("/api/health")
-      .then((response) => response.json())
-      .then((payload) => {
-        if (active) setConfiguration(payload.configuration);
+    Promise.all([
+      fetch("/api/health").then((response) => response.json()),
+      fetch("/api/auth/status").then((response) => response.json()),
+      fetch("/api/daily-token-usage").then((response) => response.json()),
+    ])
+      .then(([healthPayload, authPayload, usagePayload]) => {
+        if (active) {
+          setConfiguration(healthPayload.configuration);
+          setOwnerAuth(authPayload.ownerAuth);
+          setDailyUsage(usagePayload.usage);
+        }
       })
       .catch(() => {
         if (active) {
@@ -581,6 +687,15 @@ function App() {
     };
   }, []);
 
+  async function logoutOwner() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    setOwnerAuth((current) => ({
+      ...(current || {}),
+      connected: false,
+      channels: [],
+    }));
+  }
+
   async function submit(event) {
     event.preventDefault();
     setError("");
@@ -594,6 +709,7 @@ function App() {
         body: JSON.stringify({
           url: url.trim(),
           maxComments: Number(maxComments),
+          analysisMode,
         }),
       });
       const payload = await response.json();
@@ -605,6 +721,11 @@ function App() {
       }
 
       setAnalysis(payload.analysis);
+      const usageResponse = await fetch("/api/daily-token-usage");
+      if (usageResponse.ok) {
+        const usagePayload = await usageResponse.json();
+        setDailyUsage(usagePayload.usage);
+      }
     } catch (submitError) {
       setError(submitError.message);
     } finally {
@@ -618,14 +739,14 @@ function App() {
       <main>
         <section className="hero">
           <div className="hero-copy">
-            <p className="eyebrow">Video intelligence / public data</p>
+            <p className="eyebrow">Video inspection / Audience Reaction</p>
             <h1>
-              See the video.
+              Unlock Retention.
               <br />
-              <em>Hear the audience.</em>
+              <em>Reap Rewards.</em>
             </h1>
             <p>
-              Turn a YouTube URL into a reliable view-count report and a concise
+              Turn a YouTube URL into a reliable statisitic, transcription, frame analysis and GPT5.4 enriched concise
               evidence-led assessment of its packaging, performance, and public
               conversation.
             </p>
@@ -645,6 +766,31 @@ function App() {
                 required
               />
             </div>
+            <div className="owner-auth-strip owner-auth-priority">
+              <div>
+                <span>Creator-only transcript analysis</span>
+                <strong>
+                  {ownerAuth?.connected
+                    ? `Connected: ${ownerAuth.channels.map((channel) => channel.title).join(", ")}`
+                    : "Sign in to unlock owner captions"}
+                </strong>
+                <p>
+                  Google access lets us analyse captions for videos you own,
+                  enabling Hook, Clarity, Structure, and Pacing signals.
+                </p>
+              </div>
+              {ownerAuth?.connected ? (
+                <button type="button" className="auth-action" onClick={logoutOwner}>
+                  Disconnect
+                </button>
+              ) : ownerAuth?.configured ? (
+                <a className="auth-action" href="/auth/google/start">
+                  Connect Google
+                </a>
+              ) : (
+                <span className="auth-unavailable">OAuth not configured</span>
+              )}
+            </div>
             <div className="form-footer">
               <label className="comment-limit">
                 <span>Comment sample</span>
@@ -657,14 +803,43 @@ function App() {
                   aria-describedby="comment-help"
                 />
               </label>
-              <button type="submit" disabled={loading}>
-                {loading ? "Analysing…" : "Analyse video"}
+              <button type="submit" disabled={loading || dailyUsage?.locked}>
+                {loading ? "Analysing…" : dailyUsage?.locked ? "Daily limit reached" : "Analyse video"}
                 <span aria-hidden="true">→</span>
               </button>
             </div>
             <small id="comment-help">
               Stratified top, recent, and highly liked threads; maximum 500.
             </small>
+            <fieldset className="analysis-mode" disabled={loading}>
+              <legend>Analysis depth</legend>
+              <label className={analysisMode === "economy" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="analysis-mode"
+                  value="economy"
+                  checked={analysisMode === "economy"}
+                  onChange={(event) => setAnalysisMode(event.target.value)}
+                />
+                <span><b>Economy</b><small>≤5,000 tokens · faster</small></span>
+              </label>
+              <label className={analysisMode === "heavy" ? "selected" : ""}>
+                <input
+                  type="radio"
+                  name="analysis-mode"
+                  value="heavy"
+                  checked={analysisMode === "heavy"}
+                  onChange={(event) => setAnalysisMode(event.target.value)}
+                />
+                <span><b>Heavy Analysis</b><small>≤10,000 tokens · deeper sample</small></span>
+              </label>
+            </fieldset>
+            <span className="form-budget-note">
+              {analysisMode === "heavy" ? "Heavy Analysis" : "Economy mode"}
+              {" · one GPT request · "}
+              {analysisMode === "heavy" ? "10,000" : "5,000"}-token ceiling
+            </span>
+            <DailyUsageNotice usage={dailyUsage} />
           </form>
         </section>
 

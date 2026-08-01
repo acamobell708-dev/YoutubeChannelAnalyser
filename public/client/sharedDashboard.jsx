@@ -38,8 +38,8 @@ export function Header({ activePage }) {
           ▶
         </span>
         <span>
-          <strong>YT Signal</strong>
-          <small>Audience intelligence</small>
+          <strong>YT Smart Analysis</strong>
+          <small>Find a path forward</small>
         </span>
       </a>
       <nav className="primary-nav" aria-label="Primary navigation">
