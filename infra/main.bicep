@@ -40,7 +40,7 @@ param openaiVideoModel string = 'gpt-5.4'
 @description('Optional OpenAI channel-analysis model override.')
 param openaiChannelModel string = 'gpt-5.4'
 
-resource environment 'Microsoft.App/managedEnvironments@2025-07-01' = {
+resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
   name: '${containerAppName}-env'
   location: location
   properties: {
