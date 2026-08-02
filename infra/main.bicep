@@ -40,9 +40,17 @@ param openaiVideoModel string = 'gpt-5.4'
 @description('Optional OpenAI channel-analysis model override.')
 param openaiChannelModel string = 'gpt-5.4'
 
-resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
+resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: '${containerAppName}-env'
   location: location
+  properties: {
+    // Azure's no-logs CLI path serializes both values as null. This avoids
+    // provisioning a Log Analytics workspace or Azure Monitor export.
+    appLogsConfiguration: {
+      destination: json('null')
+      logAnalyticsConfiguration: null
+    }
+  }
   tags: {
     application: 'youtube-signal-lab'
     costProfile: 'personal-scale-to-zero'
