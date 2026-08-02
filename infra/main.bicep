@@ -47,7 +47,7 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
     // Azure's no-logs CLI path serializes both values as null. This avoids
     // provisioning a Log Analytics workspace or Azure Monitor export.
     appLogsConfiguration: {
-      destination: json('null')
+      destination: null
       logAnalyticsConfiguration: null
     }
   }
