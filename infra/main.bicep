@@ -56,7 +56,7 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
         transport: 'auto'
         allowInsecure: false
       }
-      secrets: [
+      secrets: concat([
         {
           name: 'youtube-api-key'
           value: youtubeApiKey
@@ -64,10 +64,6 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
         {
           name: 'openai-api-key'
           value: openaiApiKey
-        }
-        {
-          name: 'openai-admin-key'
-          value: openaiAdminKey
         }
         {
           name: 'google-oauth-client-id'
@@ -81,7 +77,12 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
           name: 'session-secret'
           value: sessionSecret
         }
-      ]
+      ], empty(openaiAdminKey) ? [] : [
+        {
+          name: 'openai-admin-key'
+          value: openaiAdminKey
+        }
+      ])
     }
     template: {
       containers: [
@@ -92,7 +93,7 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
             cpu: json('0.25')
             memory: '0.5Gi'
           }
-          env: [
+          env: concat([
             {
               name: 'PORT'
               value: '3000'
@@ -104,10 +105,6 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
             {
               name: 'OPENAI_API_KEY'
               secretRef: 'openai-api-key'
-            }
-            {
-              name: 'OPENAI_ADMIN_KEY'
-              secretRef: 'openai-admin-key'
             }
             {
               name: 'GOOGLE_OAUTH_CLIENT_ID'
@@ -133,7 +130,12 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
               name: 'OPENAI_CHANNEL_MODEL'
               value: openaiChannelModel
             }
-          ]
+          ], empty(openaiAdminKey) ? [] : [
+            {
+              name: 'OPENAI_ADMIN_KEY'
+              secretRef: 'openai-admin-key'
+            }
+          ])
         }
       ]
       scale: {
