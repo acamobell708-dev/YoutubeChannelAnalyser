@@ -1,5 +1,8 @@
-@description('Azure region for the Container Apps environment and application.')
+@description('Azure region of the existing managed environment and new Container App.')
 param location string = resourceGroup().location
+
+@description('Full Azure resource ID of the existing Container Apps managed environment to use.')
+param existingManagedEnvironmentId string
 
 @description('A globally unique name for the Azure Container App.')
 param containerAppName string
@@ -40,28 +43,11 @@ param openaiVideoModel string = 'gpt-5.4'
 @description('Optional OpenAI channel-analysis model override.')
 param openaiChannelModel string = 'gpt-5.4'
 
-resource environment 'Microsoft.App/managedEnvironments@2024-03-01' = {
-  name: '${containerAppName}-env'
-  location: location
-  properties: {
-    // Azure's no-logs CLI path serializes both values as null. This avoids
-    // provisioning a Log Analytics workspace or Azure Monitor export.
-    appLogsConfiguration: {
-      destination: null
-      logAnalyticsConfiguration: null
-    }
-  }
-  tags: {
-    application: 'youtube-signal-lab'
-    costProfile: 'personal-scale-to-zero'
-  }
-}
-
 resource app 'Microsoft.App/containerApps@2025-07-01' = {
   name: containerAppName
   location: location
   properties: {
-    managedEnvironmentId: environment.id
+    managedEnvironmentId: existingManagedEnvironmentId
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
