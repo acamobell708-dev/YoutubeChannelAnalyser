@@ -1,0 +1,103 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/youtube-signal-lab
+
+jobs:
+  deploy:
+    name: Test, build, and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build browser assets
+        run: npm run build
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy the Container App
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az deployment group create \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --template-file infra/main.bicep \
+              --parameters \
+                location="${{ vars.AZURE_LOCATION }}" \
+                containerAppName="${{ vars.AZURE_CONTAINER_APP_NAME }}" \
+                containerImage="${{ env.IMAGE_NAME }}:${{ github.sha }}" \
+                youtubeApiKey="${{ secrets.YOUTUBE_API_KEY }}" \
+                openaiApiKey="${{ secrets.OPENAI_API_KEY }}" \
+                openaiAdminKey="${{ secrets.OPENAI_ADMIN_KEY }}" \
+                googleOAuthClientId="${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}" \
+                googleOAuthClientSecret="${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}" \
+                googleOAuthRedirectUri="${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}" \
+                sessionSecret="${{ secrets.SESSION_SECRET }}" \
+                openaiVideoModel="${{ vars.OPENAI_VIDEO_MODEL }}" \
+                openaiChannelModel="${{ vars.OPENAI_CHANNEL_MODEL }}"
+
+      - name: Verify production health
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            FQDN=$(az containerapp show \
+              --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+              --name "${{ vars.AZURE_CONTAINER_APP_NAME }}" \
+              --query properties.configuration.ingress.fqdn \
+              --output tsv)
+            curl --fail --silent --show-error --retry 12 --retry-all-errors --retry-delay 5 \
+              "https://${FQDN}/api/health"

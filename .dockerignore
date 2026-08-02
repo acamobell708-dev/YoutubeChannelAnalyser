@@ -1,0 +1,12 @@
+.env
+.git
+.github
+node_modules
+npm-debug.log*
+test
+AgentTests
+docs
+public/assets/*.js
+public/assets/*.js.map
+README.md
+RunALL.cmd

@@ -7,6 +7,7 @@ export function runSanityChecks({
   metrics,
   insights,
   phaseTwo,
+  retention,
   tokenBudget,
 }) {
   const checks = [];
@@ -98,7 +99,7 @@ export function runSanityChecks({
   }
 
   const supportedBudget =
-    (tokenBudget?.mode === "economy" && tokenBudget?.ceilingTokens === 5_000) ||
+    (tokenBudget?.mode === "economy" && tokenBudget?.ceilingTokens === 6_500) ||
     (tokenBudget?.mode === "heavy" && tokenBudget?.ceilingTokens === 10_000);
   if (
     supportedBudget &&
@@ -136,6 +137,28 @@ export function runSanityChecks({
     checks.push("owner transcript analytics passed local score validation");
   } else {
     errors.push("Phase 2 analytics are missing or incorrectly structured");
+  }
+
+  if (
+    retention?.status === "unknown" &&
+    Array.isArray(retention.points) &&
+    retention.points.length === 0
+  ) {
+    checks.push("owner retention uses an explicit unavailable state");
+  } else if (
+    retention?.status === "available" &&
+    retention.source === "youtube_owner_analytics" &&
+    retention.points?.length > 0 &&
+    retention.points.every(
+      (point) =>
+        Number.isFinite(point.atRatio) &&
+        Number.isFinite(point.audienceWatchPercentage) &&
+        Number.isFinite(point.relativeRetentionScore),
+    )
+  ) {
+    checks.push("owner retention passed deterministic local validation");
+  } else {
+    errors.push("owner retention is missing or incorrectly structured");
   }
 
   return {

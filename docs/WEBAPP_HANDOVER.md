@@ -18,6 +18,12 @@ the tests before making changes; this project may have uncommitted local work.
   structured interpretation.
 - The Video Dashboard implements Phase 1 public analysis and a limited Phase 2
   owner-authorised caption/transcript analysis.
+- The result includes a structured next-video playbook with three potential
+  subjects, one recommended priority, carry-forward strengths, improvements,
+  retention hypotheses and packaging/caption optimisation guidance.
+- A concise page-bottom value explanation identifies how the product combines
+  public and owner evidence, converts signals into actions, and exposes its
+  analytical limits instead of presenting AI interpretation as measured fact.
 - Google OAuth is implemented in code, but is optional. Without login, public
   analysis still runs and owner-dependent fields are returned as `Unknown`.
 - The repository's current GitHub Actions workflow is CI only: it tests and
@@ -70,7 +76,10 @@ refresh tokens, prompts containing raw captions, or session data to `public/`.
 | `src/services/openAIAnalysisClient.js` | OpenAI Responses API wrapper, strict JSON parsing/local validation and usage extraction. |
 | `src/services/videoInsightAnalyst.js` | Bounded Phase 1/2 GPT request and economy-budget controls. |
 | `src/services/googleOAuthService.js` | Google OAuth 2.0 authorisation, PKCE, token exchange/refresh, in-memory sessions and channel ownership lookup. |
+| `src/services/ownerYouTubeAccess.js` | Shared owner/session/channel authorisation for creator-only YouTube services. |
 | `src/services/youtubeCaptionService.js` | Owner-authorised caption discovery/download, WebVTT parsing and `Unknown` fallback. |
+| `src/services/youtubeAnalyticsClient.js` | Reusable YouTube Analytics report-query client that maps result tables to objects. |
+| `src/services/youtubeRetentionService.js` | Owner retention retrieval plus deterministic intro, strongest-section, relative-performance, dip and spike calculations. |
 | `src/analysis/` | Video/channel orchestration, deterministic metrics, schemas and sanity checks. |
 
 ## Public analysis: Phase 1
@@ -105,7 +114,7 @@ audience retention or watch time.
 Phase 2 is intentionally narrower than "watching" or downloading a YouTube
 video. The YouTube Data API does not expose arbitrary video/audio binaries to
 this application. The current implementation uses owner-authorised caption
-tracks only.
+tracks and YouTube Analytics reports.
 
 ### OAuth and ownership flow
 
@@ -117,22 +126,26 @@ Dashboard -> /auth/google/start
   -> signed HttpOnly session cookie in browser
   -> channels.list(mine=true) verifies owned channels
   -> captions.list + captions.download for a matching video channel
+  -> youtubeAnalytics.reports.query for the owned video's watch metrics
 ```
 
-The only OAuth scope requested is:
+The OAuth scopes requested are:
 
 ```text
 https://www.googleapis.com/auth/youtube.force-ssl
+https://www.googleapis.com/auth/youtube.readonly
+https://www.googleapis.com/auth/yt-analytics.readonly
 ```
 
 The server requires that the signed-in account owns or manages the video
 channel returned by `channels.list?mine=true`. If there is no login, the login
-expired, the account does not own that channel, captions are unavailable, or
-YouTube denies the download, the owner-dependent result is safely represented
-as `Unknown`. Phase 1 still completes.
+expired, the account does not own that channel, captions/analytics are
+unavailable, or YouTube denies access, each owner-dependent result is safely
+represented as unavailable. Phase 1 still completes.
 
 The browser never receives access tokens, refresh tokens or caption text. It
-receives only caption availability/source metadata and the bounded analysis.
+receives caption availability/source metadata, the bounded transcript
+analysis, and browser-safe measured retention points/statistics.
 
 ### Current Phase 2 output
 
@@ -148,6 +161,23 @@ transcript analysis containing:
 
 The browser does not receive the raw transcript.
 
+When YouTube Analytics data is available, the response also includes average
+view duration, average percentage viewed, watch time, the retention point
+nearest 30 seconds, an absolute-retention hoverable curve, a strongest section
+and deterministic local dips/spikes. The line and its intro/strongest-section
+figures are absolute retention: the share of this video's viewers still watching
+at each point. The separate similar-length card uses YouTube's optional relative
+(typical-retention) score only when it is returned; it is labelled `Withheld`
+when YouTube does not provide the benchmark and is never derived from the line.
+
+The raw curve is not sent to GPT; only up to three verified moments are supplied
+in the existing single structured request. If both a dip and spike are detected,
+the selected set always includes at least one of each, with the remaining slot
+going to the largest change. The UI displays measured values first and an
+evidence-led, non-causal explanation based on nearby authorised transcript
+excerpts and timestamped comments. Transcript scores remain model observations
+and are displayed separately from measured retention.
+
 ## OpenAI analysis modes and limits
 
 Video analysis accepts `analysisMode: "economy"` or `"heavy"`. Each mode makes
@@ -159,9 +189,10 @@ Current controls in `videoInsightAnalyst.js`:
 | --- | --- |
 | Model | `gpt-5.4` by default (`OPENAI_VIDEO_MODEL` can override it) |
 | Reasoning effort | `none` |
-| Maximum output tokens | 1,800 economy / 3,000 heavy |
-| Intended total ceiling | 5,000 economy / 10,000 heavy model tokens per video |
-| Conservative estimated-input target | 3,000 economy / 6,000 heavy tokens |
+| Maximum output tokens | 2,800 economy / 3,000 heavy |
+| Intended total ceiling | 6,500 economy / 10,000 heavy model tokens per video |
+| Conservative estimated-input target | 3,700 economy / 6,500 heavy tokens |
+| Economy output shaping | A compact strict-JSON instruction targets 1,800 output tokens, leaving headroom before the 2,800-token limit. |
 | GPT comment threads | At most 8 economy / 18 heavy before budget trimming |
 | Reply records per thread | At most 1 economy / 2 heavy |
 | Caption excerpts | At most 12 economy / 24 heavy selected timestamped excerpts before budget trimming |
@@ -178,6 +209,16 @@ weaken it without adding an exact tokenizer/preflight strategy and tests.
 The OpenAI response is required to match strict JSON Schema. Local validation
 checks feedback categories, counts, allowed timestamps, score ranges and
 caption-derived timestamps before the response is rendered.
+
+The same response supplies the compact **Suggestions for your next video**
+card displayed before the GPT interpretation card. It has three distinct,
+schema-required subjects (one recommended), each with an audience-fit rationale
+and practical execution direction. Recommendations are grounded only in
+supplied packaging, sampled comments, optional caption excerpts, and—when
+available—a compact set of verified retention moments. Timestamped carry-forward
+and improve items include a brief `Why` summary of the matching retention
+explanation. Without measured retention they remain hypotheses; CTR is not
+available.
 
 ## HTTP routes
 
@@ -237,8 +278,9 @@ Prerequisites:
 - YouTube Data API v3 enabled in the Google Cloud project;
 - an OpenAI API key;
 - for Phase 2, a Google OAuth Web client, the exact localhost redirect URI,
-  the `youtube.force-ssl` scope, and the channel-owner Google account listed as
-  a Test user while the OAuth app is in Testing.
+  the `youtube.force-ssl`, `youtube.readonly`, and `yt-analytics.readonly`
+  scopes, and the channel-owner Google account listed as a Test user while the
+  OAuth app is in Testing. Enable both YouTube Data API v3 and YouTube Analytics API.
 
 Install and run:
 
@@ -307,7 +349,9 @@ Authorised redirect URI: http://localhost:3000/auth/google/callback
 Authorised JavaScript origins: none required
 Audience: External
 Publishing status: Testing
-Scope: https://www.googleapis.com/auth/youtube.force-ssl
+Scopes: https://www.googleapis.com/auth/youtube.force-ssl
+        https://www.googleapis.com/auth/youtube.readonly
+        https://www.googleapis.com/auth/yt-analytics.readonly
 Test users: each Google account allowed to sign in during testing
 ```
 
@@ -324,12 +368,12 @@ Do not switch to production until all of the following are done:
    example `https://example.com/auth/google/callback`.
 3. The app has final branding, a support email, verified authorised domains,
    homepage, privacy policy and terms URLs as required by Google.
-4. The required `youtube.force-ssl` scope is reviewed in Google Auth Platform.
-   It accesses private YouTube data and can trigger Google verification
-   requirements for external production users.
+4. The required YouTube Data and Analytics scopes are reviewed in Google Auth
+   Platform. They access private creator data and can trigger Google
+   verification requirements for external production users.
 5. The consent screen accurately explains why the application uses the scope:
-   owner confirmation and authorised caption retrieval for the creator's own
-   channel.
+   owner confirmation plus authorised caption and retention retrieval for the
+   creator's own channel.
 6. Test accounts and test videos demonstrate the complete OAuth/caption flow.
 7. A process exists for user support, privacy requests, consent revocation and
    incident response.
@@ -430,13 +474,14 @@ secrets, if the host injects them at runtime.
 1. **No arbitrary video/audio download.** Do not introduce `yt-dlp` or scraping
    to bypass YouTube API restrictions. Add creator-uploaded source media only
    after legal/privacy/product review.
-2. **No YouTube Analytics API integration.** Creator private metrics, retention,
-   impressions and click-through analysis are not implemented. They require a
-   separate authorised YouTube Analytics design and permissions review.
+2. **Partial YouTube Analytics integration.** Owner watch metrics and retention
+   are implemented. Impressions and click-through analysis remain unavailable
+   until supported authorised reports and their product/privacy implications
+   are implemented.
 3. **No cross-user persistence.** There is no database for users or analyses.
-4. **Phase 2 is caption evidence, not retention evidence.** Scores are model
-   observations over selected transcript excerpts; they are not audience
-   retention measurements or proof of causality.
+4. **Transcript scores are not retention measurements.** Hook, clarity,
+   structure and pacing scores are model observations over selected excerpts.
+   The separate retention curve is measured, but neither proves causality.
 5. **Current channel analysis is separate.** It reports public top-ten videos
    by views/comments and a bounded GPT pattern summary. It is not an agent
    orchestration system.

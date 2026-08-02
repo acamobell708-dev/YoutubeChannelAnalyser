@@ -17,8 +17,9 @@ test("GoogleOAuthService uses state, PKCE, and keeps tokens server-side", async 
       return new Response(
         JSON.stringify({
           access_token: "private-access-token",
-          refresh_token: "private-refresh-token",
-          expires_in: 3600,
+        refresh_token: "private-refresh-token",
+        expires_in: 3600,
+        scope: "https://www.googleapis.com/auth/youtube.force-ssl https://www.googleapis.com/auth/youtube.readonly https://www.googleapis.com/auth/yt-analytics.readonly",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
@@ -46,6 +47,10 @@ test("GoogleOAuthService uses state, PKCE, and keeps tokens server-side", async 
     "S256",
   );
   assert.ok(authorisationUrl.searchParams.get("code_challenge"));
+  assert.match(
+    authorisationUrl.searchParams.get("scope"),
+    /yt-analytics\.readonly/,
+  );
 
   const result = await service.completeAuthorization({
     code: "one-use-code",
@@ -55,6 +60,7 @@ test("GoogleOAuthService uses state, PKCE, and keeps tokens server-side", async 
   const status = service.getStatus(result.sessionId);
 
   assert.equal(status.connected, true);
+  assert.equal(status.analyticsAccess, true);
   assert.deepEqual(status.channels, [
     { id: CHANNEL_ID, title: "Owner channel" },
   ]);

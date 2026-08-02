@@ -99,11 +99,13 @@ export class OpenAIAnalysisClient {
     }
 
     if (response.status === "incomplete") {
+      const reason = response.incomplete_details?.reason ?? "unknown";
       throw new AppError(
-        "OpenAI stopped before completing the structured analysis.",
+        `OpenAI stopped before completing the structured analysis (${reason}).`,
         {
           status: 502,
           code: "INCOMPLETE_OPENAI_STRUCTURED_ANALYSIS",
+          cause: new Error(reason),
         },
       );
     }

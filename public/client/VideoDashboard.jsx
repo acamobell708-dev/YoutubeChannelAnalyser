@@ -45,6 +45,12 @@ function formatRate(value, suffix = "") {
   return Number.isFinite(value) ? `${formatNumber(value)}${suffix}` : "—";
 }
 
+function formatWatchTime(minutes) {
+  if (!Number.isFinite(minutes)) return "Unavailable";
+  if (minutes < 60) return `${formatNumber(minutes)} min`;
+  return `${formatNumber(Math.round((minutes / 60) * 10) / 10)} hrs`;
+}
+
 function formatRank(ranking) {
   return Number.isInteger(ranking?.rank) && Number.isInteger(ranking?.outOf)
     ? `#${formatNumber(ranking.rank)} of ${formatNumber(ranking.outOf)}`
@@ -71,6 +77,44 @@ function DailyUsageNotice({ usage }) {
           : " New analyses will lock at 200,000 tokens."}
       </span>
     </div>
+  );
+}
+
+function SiteValueExplanation() {
+  return (
+    <section className="site-value" aria-labelledby="site-value-title">
+      <div className="site-value-intro">
+        <p className="eyebrow">Why use YouTube Signal Lab?</p>
+        <h2 id="site-value-title">From separate signals to a clearer next decision.</h2>
+        <p>
+          This complements YouTube Studio by bringing public performance,
+          audience feedback, packaging, and optional creator evidence into one
+          concise, evidence-conscious report.
+        </p>
+      </div>
+      <div className="site-value-grid">
+        <article>
+          <span>01</span>
+          <h3>One evidence view</h3>
+          <p>Connect public statistics, channel standing, sampled comments, metadata, and owner captions.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Signals become actions</h3>
+          <p>Turn observations into three next-video subjects, practical improvements, and packaging guidance.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Transparent analysis</h3>
+          <p>Keep deterministic calculations separate from AI interpretation, with visible samples, limits, and Unknown states.</p>
+        </article>
+        <article>
+          <span>04</span>
+          <h3>Public and creator perspectives</h3>
+          <p>Inspect any public video, then unlock richer caption evidence for videos owned by the connected creator.</p>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -211,7 +255,8 @@ function RankMeter({ label, ranking, noun }) {
   );
 }
 
-function PhaseOneScorecard({ video, metrics, packaging }) {
+function PhaseOneScorecard({ video, metrics, packaging, retention }) {
+  const ownerMetrics = retention.overview;
   return (
     <article className="phase-one-card">
       <div className="compact-heading phase-one-heading">
@@ -240,6 +285,39 @@ function PhaseOneScorecard({ video, metrics, packaging }) {
           value={formatRate(metrics.commentsPer100Views)}
           note="per 100 views"
           tooltip="Current reported comments divided by current views, multiplied by 100."
+        />
+      </div>
+
+      <div className="compact-metric-grid retention-metric-grid">
+        <CompactMetric
+          label="Average view duration"
+          value={Number.isInteger(ownerMetrics?.averageViewDurationSeconds)
+            ? formatDuration(ownerMetrics.averageViewDurationSeconds)
+            : "Unavailable"}
+          note="owner analytics"
+          tooltip="YouTube Analytics' average length of a playback for this video."
+        />
+        <CompactMetric
+          label="Average viewed"
+          value={Number.isFinite(ownerMetrics?.averageViewPercentage)
+            ? `${ownerMetrics.averageViewPercentage}%`
+            : "Unavailable"}
+          note="of video"
+          tooltip="YouTube Analytics' average percentage of the video watched per playback."
+        />
+        <CompactMetric
+          label="Watch time"
+          value={formatWatchTime(ownerMetrics?.watchTimeMinutes)}
+          note="total"
+          tooltip="Total estimated minutes watched in the owner-authorised reporting period."
+        />
+        <CompactMetric
+          label="First 30 seconds"
+          value={Number.isFinite(retention.firstThirtySeconds?.audienceWatchPercentage)
+            ? `${retention.firstThirtySeconds.audienceWatchPercentage}%`
+            : "Unavailable"}
+          note="measured retention"
+          tooltip="The measured audience-watch ratio at the retention point nearest 30 seconds."
         />
       </div>
 
@@ -302,7 +380,130 @@ function PhaseOneScorecard({ video, metrics, packaging }) {
   );
 }
 
-function InsightDigest({ packaging, audience, sampling }) {
+function NextVideoSuggestions({ recommendations, retention }) {
+  if (!recommendations) return null;
+  const subjects = [...recommendations.subjects].sort((left, right) =>
+    left.priority === right.priority
+      ? 0
+      : left.priority === "most_recommended"
+        ? -1
+        : 1,
+  );
+  const optimisationLabels = {
+    title: "Title",
+    thumbnail: "Thumbnail",
+    description: "Description",
+    tags: "Tags",
+    captions: "Captions",
+  };
+  const retentionEvidence = recommendations.retentionEvidence ?? {
+    carryForward: [],
+    improvements: [],
+  };
+  const explanationsByMoment = new Map(
+    (retention?.momentExplanations ?? []).map((moment) => [
+      `${moment.kind}:${moment.atSeconds}`,
+      moment,
+    ]),
+  );
+  const explanationSummary = (item) => {
+    const moment = explanationsByMoment.get(`${item.kind}:${item.atSeconds}`);
+    return moment?.hypothesis ? ` Why: ${moment.hypothesis}` : "";
+  };
+
+  return (
+    <article className="next-video-card">
+      <div className="compact-heading next-video-heading">
+        <div>
+          <p className="eyebrow">Creator playbook / next upload</p>
+          <h2>Suggestions for your next video</h2>
+        </div>
+        <span className="recommendation-badge">Evidence-led ideas</span>
+      </div>
+
+      <section className="next-video-section next-video-subjects">
+        <h3 className="next-video-section-title">Three potential subjects</h3>
+        <div className="subject-grid">
+          {subjects.map((subject, index) => (
+            <section
+              className={subject.priority === "most_recommended" ? "recommended" : ""}
+              key={`${subject.subject}-${index}`}
+            >
+              <span>
+                {subject.priority === "most_recommended"
+                  ? "Most recommended"
+                  : `Alternative ${index}`}
+              </span>
+               <h3>{subject.subject}</h3>
+               <strong>{subject.angle}</strong>
+               <p>{subject.rationale}</p>
+               <p className="subject-execution"><b>Make it:</b> {subject.execution}</p>
+            </section>
+          ))}
+        </div>
+      </section>
+
+      <section className="next-video-section">
+        <h3 className="next-video-section-title">What to retain and improve</h3>
+        {retentionEvidence.carryForward.length || retentionEvidence.improvements.length ? (
+          <p className="next-video-section-note">
+            Timestamped items use measured retention; their brief “Why” notes summarise the evidence-led explanations above.
+          </p>
+        ) : null}
+        <div className="next-video-guidance">
+        <section>
+          <h3>Carry forward</h3>
+          <ul>
+            {recommendations.carryForward.map((item) => <li key={item}>{item}</li>)}
+            {retentionEvidence.carryForward.map((item) => (
+              <li className="measured-evidence" key={`${item.atSeconds}-${item.text}`}>
+                <b>{formatTimestamp(item.atSeconds)}</b> {item.text}
+                {explanationSummary(item)}
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3>Improve next time</h3>
+          <ul>
+            {recommendations.improvements.map((item) => <li key={item}>{item}</li>)}
+            {retentionEvidence.improvements.map((item) => (
+              <li className="measured-evidence" key={`${item.atSeconds}-${item.text}`}>
+                <b>{formatTimestamp(item.atSeconds)}</b> {item.text}
+                {explanationSummary(item)}
+              </li>
+            ))}
+          </ul>
+        </section>
+        <section>
+          <h3>Retention approach</h3>
+          <ul>{recommendations.retentionGuidance.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+        </div>
+      </section>
+
+      <section className="next-video-section">
+        <h3 className="next-video-section-title">Packaging, discovery, and accessibility</h3>
+        <div className="optimisation-grid">
+          {Object.entries(optimisationLabels).map(([key, label]) => (
+            <div key={key}>
+              <span>{label}</span>
+              <p>{recommendations.optimisation[key]}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="next-action">
+        <span>Best next action</span>
+        <strong>{recommendations.nextAction}</strong>
+      </div>
+      <p className="recommendation-caveat">{recommendations.caveat}</p>
+    </article>
+  );
+}
+
+function InsightDigest({ packaging, audience, sampling, crossEvidence }) {
   const visibleFeedback = audience.feedbackRows
     .filter((row) => row.count > 0)
     .sort((left, right) => right.count - left.count)
@@ -319,6 +520,17 @@ function InsightDigest({ packaging, audience, sampling }) {
           {formatNumber(sampling.analysedByGpt)} threads
         </span>
       </div>
+
+      <section className="cross-evidence-summary">
+        <div>
+          <span className="digest-label">Cross-evidence summary</span>
+          <strong>{humanise(crossEvidence.expectationMatch)}</strong>
+        </div>
+        <p>{crossEvidence.summary}</p>
+        {crossEvidence.evidence.length > 0 && (
+          <ul>{crossEvidence.evidence.map((item) => <li key={item}>{item}</li>)}</ul>
+        )}
+      </section>
 
       <div className="digest-grid">
         <section>
@@ -391,6 +603,9 @@ function InsightDigest({ packaging, audience, sampling }) {
                 </div>
               )) : <p>No recurring audience signals were classified.</p>}
             </div>
+            {audience.limitations.length > 0 && (
+              <p className="analysis-caveat">{audience.limitations.slice(0, 2).join(" · ")}</p>
+            )}
           </section>
 
           {audience.timestampedReactions.length > 0 && (
@@ -407,26 +622,6 @@ function InsightDigest({ packaging, audience, sampling }) {
             </section>
           )}
 
-          <section>
-            <h3>Comment sample coverage</h3>
-            <div className="coverage-grid">
-              <span><b>{formatNumber(sampling.top)}</b>Top</span>
-              <span><b>{formatNumber(sampling.recent)}</b>Recent</span>
-              <span><b>{formatNumber(sampling.highlyLiked)}</b>Highly liked</span>
-              <span><b>{formatNumber(sampling.sampledReplies)}</b>Replies</span>
-              <span><b>{formatNumber(sampling.completeReplyThreads)}</b>Complete threads</span>
-              <span><b>{formatNumber(sampling.truncatedReplyThreads)}</b>Truncated</span>
-            </div>
-            <p className="table-note">
-              “Highly liked” is selected from the bounded top and recent
-              candidate pool because YouTube has no global likes-sorted feed.
-            </p>
-            <ul className="limitation-list compact-limitations">
-              {audience.limitations.slice(0, 3).map((limitation) => (
-                <li key={limitation}>{limitation}</li>
-              ))}
-            </ul>
-          </section>
         </div>
       </details>
     </article>
@@ -436,7 +631,11 @@ function InsightDigest({ packaging, audience, sampling }) {
 function ScoreRing({ label, value }) {
   const known = Number.isInteger(value?.score);
   const tooltip = known
-    ? `${label}: ${value.score}/100. ${value.finding}`
+    ? `${label}: ${value.score}/100. ${value.finding}${
+        label === "Hook" && value.retentionContext
+          ? ` Measured retention: ${value.retentionContext}`
+          : ""
+      }`
     : `${label}: Unknown. ${value?.finding || "Owner transcript unavailable."}`;
   return (
     <div
@@ -499,7 +698,11 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
         0–100 observations from the supplied caption excerpts: lower scores
         suggest weaker evidence (for example, a 10/100 Hook is a weak opening);
         higher scores suggest stronger evidence. Timeline timestamps show where
-        each caption excerpt occurs, not audience retention.
+        each caption excerpt occurs. When owner analytics are available, its
+        nearest measured retention point is included separately in the hover detail.
+      </p>
+      <p className="hook-retention-context">
+        <b>Hook retention context:</b> {dimensions.hook.retentionContext}
       </p>
 
       {phaseTwo.timeline.length > 0 && (
@@ -522,7 +725,11 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
                 style={{ "--height": `${point.score}%` }}
                 data-tip={`${formatTimestamp(point.atSeconds)} · ${
                   point.score
-                }/100 · ${point.label}`}
+                }/100 transcript score · ${point.label}${
+                  Number.isFinite(point.measuredRetentionPercentage)
+                    ? ` · ${point.measuredRetentionPercentage}% measured retention`
+                    : " · measured retention unavailable"
+                }`}
                 tabIndex="0"
               >
                 {point.score < 10 && (
@@ -590,8 +797,157 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
   );
 }
 
+function retentionIntroLabel(value) {
+  if (!Number.isFinite(value)) return "Unavailable";
+  if (value >= 70) return "Strong intro retention";
+  if (value >= 50) return "Moderate intro retention";
+  return "Weak intro retention";
+}
+
+function RetentionChart({ retention, durationSeconds }) {
+  if (retention.status !== "available") {
+    const needsReconnect = /Reconnect Google/i.test(retention.reason ?? "");
+    return (
+      <article className="retention-card retention-unavailable">
+        <div className="compact-heading">
+          <div>
+            <p className="eyebrow">Owner analytics / measured behaviour</p>
+            <h2>Analysed Video Retention information</h2>
+          </div>
+          <span className="evidence-state unknown">Unavailable</span>
+        </div>
+        <p>{retention.reason}</p>
+        {needsReconnect ? (
+          <a className="auth-action retention-reconnect" href="/auth/google/start">
+            Reconnect Google
+          </a>
+        ) : null}
+        <p className="retention-note">Retention is retrieved directly from YouTube Analytics; it does not consume GPT tokens.</p>
+      </article>
+    );
+  }
+
+  const width = 1_000;
+  const height = 260;
+  const plotTop = 18;
+  const plotBottom = 220;
+  const maximum = Math.max(
+    100,
+    Math.ceil(Math.max(...retention.points.map((point) => point.audienceWatchPercentage)) / 10) * 10,
+  );
+  const coordinates = retention.points.map((point) => ({
+    ...point,
+    x: point.atRatio * width,
+    y: plotBottom - (point.audienceWatchPercentage / maximum) * (plotBottom - plotTop),
+  }));
+  const linePath = coordinates.map((point, index) =>
+    `${index ? "L" : "M"}${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(" ");
+  const areaPath = `M0,${plotBottom} L${coordinates[0].x.toFixed(1)},${coordinates[0].y.toFixed(1)} ${coordinates
+    .slice(1)
+    .map((point) => `L${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+    .join(" ")} L${width},${plotBottom} Z`;
+  const relative = retention.relativePerformance;
+  const strongest = retention.strongestSection;
+  const intro = retention.firstThirtySeconds;
+
+  return (
+    <article className="retention-card">
+      <div className="compact-heading retention-heading">
+        <div>
+          <p className="eyebrow">Owner analytics / measured behaviour</p>
+          <h2>Analysed Video Retention information</h2>
+        </div>
+        <span className="evidence-state analysed">YouTube measured</span>
+      </div>
+
+      <div className="retention-stat-grid">
+        <div><span>Intro</span><strong>{intro.audienceWatchPercentage}%</strong><small>{retentionIntroLabel(intro.audienceWatchPercentage)}</small></div>
+        <div><span>Strongest section</span><strong>{formatTimestamp(strongest.startSeconds)}–{formatTimestamp(strongest.endSeconds)}</strong><small>{strongest.averageRetentionPercentage}% average retention</small></div>
+        <div>
+          <span>Similar-length comparison</span>
+          <strong>{Number.isFinite(relative.averageScore) ? humanise(relative.classification) : "Withheld"}</strong>
+          <small>{Number.isFinite(relative.averageScore) ? `${relative.averageScore}/100 YouTube relative-retention score` : "YouTube typical comparison unavailable"}</small>
+        </div>
+        <div><span>Detected changes</span><strong>{retention.dips.length} dips · {retention.spikes.length} spikes</strong><small>≥5 percentage-point local movement</small></div>
+      </div>
+
+      <div className="retention-chart-panel">
+        <div className="retention-chart-title">
+          <span>Audience retention across the video</span>
+          <small>Hover over a point for measured values</small>
+        </div>
+        <svg className="retention-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Measured YouTube audience retention line chart">
+          {[0, 0.5, 1].map((ratio) => {
+            const y = plotBottom - ratio * (plotBottom - plotTop);
+            return <line key={ratio} x1="0" x2={width} y1={y} y2={y} className="retention-gridline" />;
+          })}
+          <path d={areaPath} className="retention-area" />
+          <path d={linePath} className="retention-line" />
+          {coordinates.map((point) => (
+            <circle key={point.atRatio} cx={point.x} cy={point.y} r="3" className="retention-point">
+              <title>{`${formatTimestamp(point.atSeconds)} · ${point.audienceWatchPercentage}% retained · ${Number.isFinite(point.relativeRetentionScore) ? `${point.relativeRetentionScore}/100 relative` : "relative comparison unavailable"} · ${formatNumber(point.startedWatching)} starts · ${formatNumber(point.stoppedWatching)} stops · ${formatNumber(point.segmentImpressions)} segment views`}</title>
+            </circle>
+          ))}
+          <text x="8" y="14" className="retention-axis-label">{maximum}%</text>
+          <text x="8" y={plotBottom - 4} className="retention-axis-label">0%</text>
+          {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
+            <text key={ratio} x={ratio * width} y="250" textAnchor={ratio === 0 ? "start" : ratio === 1 ? "end" : "middle"} className="retention-axis-label">
+              {formatTimestamp(Math.round(durationSeconds * ratio))}
+            </text>
+          ))}
+        </svg>
+      </div>
+      <p className="retention-chart-note">
+        This line uses <b>absolute retention</b>: the share of views watching each point in this video.
+        {Number.isFinite(relative.averageScore)
+          ? " Typical retention is available separately in the similar-length comparison."
+          : " Typical retention is unavailable, so no similar-video benchmark is applied to this line."}
+      </p>
+
+      <div className="retention-moments">
+        <section>
+          <h3>Significant dips</h3>
+          {retention.dips.length ? retention.dips.map((dip) => (
+            <p key={dip.atSeconds}><b>{formatTimestamp(dip.atSeconds)}</b> Fell {Math.abs(dip.changePercentagePoints)} points to {dip.audienceWatchPercentage}%.</p>
+          )) : <p>No ≥5-point local dips were detected.</p>}
+        </section>
+        <section>
+          <h3>Significant spikes</h3>
+          {retention.spikes.length ? retention.spikes.map((spike) => (
+            <p key={spike.atSeconds}><b>{formatTimestamp(spike.atSeconds)}</b> Rose {spike.changePercentagePoints} points to {spike.audienceWatchPercentage}%.</p>
+          )) : <p>No ≥5-point local spikes were detected.</p>}
+        </section>
+      </div>
+      {retention.momentExplanations?.length ? (
+        <section className="retention-explanations">
+          <div>
+            <h3>Why these moments may have changed</h3>
+            <p>Measured changes are shown first. The explanation is an evidence-led hypothesis, not proof of causation.</p>
+          </div>
+          {retention.momentExplanations.map((moment) => (
+            <article key={`${moment.kind}-${moment.atSeconds}`}>
+              <header>
+                <strong>{formatTimestamp(moment.atSeconds)} · {humanise(moment.kind)}</strong>
+                <span className={moment.kind === "dip" ? "retention-dip" : "retention-spike"}>
+                  {moment.kind === "dip" ? "Drop" : "Rise"} {Math.abs(moment.changePercentagePoints)} pts
+                </span>
+              </header>
+              <p className="retention-hard-evidence">
+                {moment.audienceWatchPercentage}% retained. Nearest transcript evidence: {Number.isInteger(moment.nearestTranscriptAtSeconds) ? formatTimestamp(moment.nearestTranscriptAtSeconds) : "unavailable"}; {moment.timestampedCommentCount ?? 0} nearby timestamped comment{moment.timestampedCommentCount === 1 ? "" : "s"}.
+              </p>
+              <p><b>Evidence context:</b> {moment.evidence ?? "No AI evidence paraphrase was available."}</p>
+              <p><b>Possible explanation:</b> {moment.hypothesis ?? "No AI hypothesis was available."} <small>{moment.confidence ? `${humanise(moment.confidence)} confidence` : ""}</small></p>
+            </article>
+          ))}
+        </section>
+      ) : null}
+      <p className="retention-note">Measured owner-only YouTube Analytics data. Values can exceed 100% when viewers replay a segment. This retrieval does not consume GPT tokens.</p>
+    </article>
+  );
+}
+
 function ResultStage({ analysis }) {
-  const { video, metrics, insights, phaseTwo, tokenBudget } = analysis;
+  const { video, metrics, insights, phaseTwo, retention, tokenBudget } = analysis;
 
   return (
     <section className="result-stage">
@@ -635,12 +991,16 @@ function ResultStage({ analysis }) {
         video={video}
         metrics={metrics}
         packaging={insights.packaging}
+        retention={retention}
       />
       <PhaseTwoCompact phaseTwo={phaseTwo} tokenBudget={tokenBudget} />
+      <RetentionChart retention={retention} durationSeconds={video.durationSeconds} />
+      <NextVideoSuggestions recommendations={insights.nextVideo} retention={retention} />
       <InsightDigest
         packaging={insights.packaging}
         audience={insights.audience}
         sampling={video.commentSampling}
+        crossEvidence={insights.crossEvidence}
       />
 
       <SanityCard sanity={analysis.sanity} />
@@ -768,15 +1128,17 @@ function App() {
             </div>
             <div className="owner-auth-strip owner-auth-priority">
               <div>
-                <span>Creator-only transcript analysis</span>
+                <span>Creator-only transcript and retention analysis</span>
                 <strong>
                   {ownerAuth?.connected
-                    ? `Connected: ${ownerAuth.channels.map((channel) => channel.title).join(", ")}`
-                    : "Sign in to unlock owner captions"}
+                    ? ownerAuth.analyticsAccess === false
+                      ? "Connected, but retention permission needs reconnecting"
+                      : `Connected: ${ownerAuth.channels.map((channel) => channel.title).join(", ")}`
+                    : "Sign in to unlock owner evidence"}
                 </strong>
                 <p>
-                  Google access lets us analyse captions for videos you own,
-                  enabling Hook, Clarity, Structure, and Pacing signals.
+                  Google access lets us analyse captions and measured retention
+                  for videos you own, including Hook, Clarity, Structure, and Pacing context.
                 </p>
               </div>
               {ownerAuth?.connected ? (
@@ -821,7 +1183,7 @@ function App() {
                   checked={analysisMode === "economy"}
                   onChange={(event) => setAnalysisMode(event.target.value)}
                 />
-                <span><b>Economy</b><small>≤5,000 tokens · faster</small></span>
+                <span><b>Economy</b><small>≤6,500 tokens · faster</small></span>
               </label>
               <label className={analysisMode === "heavy" ? "selected" : ""}>
                 <input
@@ -837,7 +1199,7 @@ function App() {
             <span className="form-budget-note">
               {analysisMode === "heavy" ? "Heavy Analysis" : "Economy mode"}
               {" · one GPT request · "}
-              {analysisMode === "heavy" ? "10,000" : "5,000"}-token ceiling
+              {analysisMode === "heavy" ? "10,000" : "6,500"}-token ceiling
             </span>
             <DailyUsageNotice usage={dailyUsage} />
           </form>
@@ -855,6 +1217,7 @@ function App() {
             <EmptyStage />
           )}
         </div>
+        <SiteValueExplanation />
       </main>
 
       <Footer />

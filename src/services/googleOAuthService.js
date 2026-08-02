@@ -9,7 +9,10 @@ const REVOKE_ENDPOINT = "https://oauth2.googleapis.com/revoke";
 const CHANNELS_ENDPOINT = "https://www.googleapis.com/youtube/v3/channels";
 const OWNER_SCOPES = [
   "https://www.googleapis.com/auth/youtube.force-ssl",
+  "https://www.googleapis.com/auth/youtube.readonly",
+  "https://www.googleapis.com/auth/yt-analytics.readonly",
 ];
+const ANALYTICS_READ_SCOPE = "https://www.googleapis.com/auth/yt-analytics.readonly";
 
 function randomUrlSafe(bytes = 32) {
   return crypto.randomBytes(bytes).toString("base64url");
@@ -82,6 +85,7 @@ export class GoogleOAuthService {
       response_type: "code",
       scope: OWNER_SCOPES.join(" "),
       access_type: "offline",
+      include_granted_scopes: "true",
       prompt: "consent",
       state,
       code_challenge: sha256UrlSafe(codeVerifier),
@@ -136,8 +140,14 @@ export class GoogleOAuthService {
       refreshToken: tokenPayload.refresh_token || null,
       accessTokenExpiresAt:
         this.now() + Math.max(60, tokenPayload.expires_in || 3600) * 1000,
+      refreshPromise: null,
       expiresAt: this.now() + this.sessionTtlMs,
       channels,
+      grantedScopes: new Set(
+        String(tokenPayload.scope || OWNER_SCOPES.join(" "))
+          .split(/\s+/)
+          .filter(Boolean),
+      ),
     });
 
     return {
@@ -168,23 +178,12 @@ export class GoogleOAuthService {
       this.sessions.delete(sessionId);
       return null;
     }
-
-    const response = await this.fetchImpl(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        refresh_token: session.refreshToken,
-        grant_type: "refresh_token",
-      }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    const payload = await readJson(response, "Google token refresh failed.");
-    session.accessToken = payload.access_token;
-    session.accessTokenExpiresAt =
-      this.now() + Math.max(60, payload.expires_in || 3600) * 1000;
-    return session.accessToken;
+    if (!session.refreshPromise) {
+      session.refreshPromise = this.#refreshAccessToken(session).finally(() => {
+        session.refreshPromise = null;
+      });
+    }
+    return session.refreshPromise;
   }
 
   async logout(sessionId) {
@@ -231,11 +230,31 @@ export class GoogleOAuthService {
     }));
   }
 
+  async #refreshAccessToken(session) {
+    const response = await this.fetchImpl(TOKEN_ENDPOINT, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: this.clientId,
+        client_secret: this.clientSecret,
+        refresh_token: session.refreshToken,
+        grant_type: "refresh_token",
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const payload = await readJson(response, "Google token refresh failed.");
+    session.accessToken = payload.access_token;
+    session.accessTokenExpiresAt =
+      this.now() + Math.max(60, payload.expires_in || 3600) * 1000;
+    return session.accessToken;
+  }
+
   #publicSessionStatus(session) {
     return {
       configured: true,
       connected: true,
       channels: session.channels,
+      analyticsAccess: session.grantedScopes?.has(ANALYTICS_READ_SCOPE) ?? null,
       expiresAt: new Date(session.expiresAt).toISOString(),
     };
   }

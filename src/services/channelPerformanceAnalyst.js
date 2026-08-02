@@ -37,6 +37,7 @@ export class ChannelPerformanceAnalyst {
       "Do not claim causation, invent audience demographics, or assume access to impressions, click-through rate, retention, or watch time.",
       "Mention important sample limitations.",
       "Return 4-6 concise bullet points written for a channel creator.",
+      "Before returning, verify that the response contains 4-6 complete, evidence-supported bullet points.",
     ].join(" ");
 
     const input = [

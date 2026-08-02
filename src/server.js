@@ -6,9 +6,12 @@ import { ChannelPerformanceAnalyst } from "./services/channelPerformanceAnalyst.
 import { DailyTokenQuota } from "./services/dailyTokenQuota.js";
 import { GoogleOAuthService } from "./services/googleOAuthService.js";
 import { OpenAIAnalysisClient } from "./services/openAIAnalysisClient.js";
+import { OwnerYouTubeAccess } from "./services/ownerYouTubeAccess.js";
 import { VideoInsightAnalyst } from "./services/videoInsightAnalyst.js";
+import { YouTubeAnalyticsClient } from "./services/youtubeAnalyticsClient.js";
 import { YouTubeCaptionService } from "./services/youtubeCaptionService.js";
 import { YouTubeDataClient } from "./services/youtubeDataClient.js";
+import { YouTubeRetentionService } from "./services/youtubeRetentionService.js";
 
 const youtubeClient = new YouTubeDataClient({
   apiKey: config.youtubeApiKey,
@@ -28,8 +31,17 @@ const googleOAuthService = new GoogleOAuthService({
   redirectUri: config.googleOAuthRedirectUri,
   sessionSecret: config.sessionSecret,
 });
+const ownerYouTubeAccess = new OwnerYouTubeAccess({
+  oauthService: googleOAuthService,
+});
 const captionService = new YouTubeCaptionService({
   oauthService: googleOAuthService,
+  ownerAccess: ownerYouTubeAccess,
+});
+const youtubeAnalyticsClient = new YouTubeAnalyticsClient();
+const retentionService = new YouTubeRetentionService({
+  ownerAccess: ownerYouTubeAccess,
+  analyticsClient: youtubeAnalyticsClient,
 });
 const performanceAnalyst = new ChannelPerformanceAnalyst({
   model: config.openaiChannelModel,
@@ -40,6 +52,7 @@ const analyseVideo = createVideoAnalyser({
   youtubeClient,
   insightAnalyst: videoInsightAnalyst,
   captionService,
+  retentionService,
 });
 const analyseChannel = createChannelAnalyser({
   youtubeClient,

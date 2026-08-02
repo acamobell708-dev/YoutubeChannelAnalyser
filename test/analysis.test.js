@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createVideoAnalyser } from "../src/analysis/analyseVideo.js";
+import { selectRetentionMomentsForExplanation } from "../src/analysis/retentionMoments.js";
 import { runSanityChecks } from "../src/analysis/sanity.js";
 import { FEEDBACK_CATEGORIES } from "../src/analysis/videoInsightSchema.js";
 import { VideoInsightAnalyst } from "../src/services/videoInsightAnalyst.js";
@@ -9,6 +10,23 @@ import { VideoInsightAnalyst } from "../src/services/videoInsightAnalyst.js";
 const VIDEO_ID = "dQw4w9WgXcQ";
 const VIDEO_URL = `https://www.youtube.com/watch?v=${VIDEO_ID}`;
 const CHANNEL_ID = `UC${"e".repeat(22)}`;
+
+test("retention explanations reserve a place for a detected dip and spike", () => {
+  const moments = selectRetentionMomentsForExplanation({
+    dips: [
+      { atSeconds: 10, changePercentagePoints: -12 },
+      { atSeconds: 20, changePercentagePoints: -9 },
+      { atSeconds: 30, changePercentagePoints: -8 },
+    ],
+    spikes: [{ atSeconds: 40, changePercentagePoints: 5 }],
+  });
+
+  assert.equal(moments.length, 3);
+  assert.deepEqual(
+    moments.map((moment) => `${moment.kind}:${moment.atSeconds}`),
+    ["dip:10", "spike:40", "dip:20"],
+  );
+});
 
 function feedbackRows(overrides = {}) {
   return FEEDBACK_CATEGORIES.map((category) => ({
@@ -50,6 +68,48 @@ const insightAnalysis = {
     ],
     limitations: ["The sample is public and may not represent silent viewers."],
   },
+  nextVideo: {
+    subjects: [
+      {
+        subject: "A deeper worked example",
+        angle: "Resolve the main follow-up request",
+        rationale: "Sampled viewers praised the explanation and requested a follow-up.",
+        execution: "Open with the finished result, then walk through one focused example.",
+        priority: "most_recommended",
+      },
+      {
+        subject: "Common beginner mistakes",
+        angle: "Turn recurring questions into a practical guide",
+        rationale: "Questions in the sample identify useful points of friction.",
+        execution: "Show three mistakes in quick succession, each with one clear fix.",
+        priority: "alternative",
+      },
+      {
+        subject: "Advanced application",
+        angle: "Extend the tutorial for returning viewers",
+        rationale: "It continues the same clearly communicated topic.",
+        execution: "Tease the advanced outcome first, then compare it with the prior technique.",
+        priority: "alternative",
+      },
+    ],
+    carryForward: ["Keep the direct explanation and worked-example format."],
+    improvements: ["State the intended outcome more clearly in the opening."],
+    retentionGuidance: ["Preview the final result before beginning the steps."],
+    optimisation: {
+      title: "Lead with the specific outcome.",
+      thumbnail: "Show one clear result with minimal text.",
+      description: "Put the promise and key resources in the first lines.",
+      tags: "Use a small set of directly relevant topic variants.",
+      captions: "Correct key terms and divide long sentences cleanly.",
+    },
+    nextAction: "Validate the recommended subject against recent viewer requests.",
+    caveat: "These are hypotheses from public packaging, comments, and sampled captions—not measured retention data.",
+  },
+  crossEvidence: {
+    summary: "The clear packaging promise is consistent with positive comments, but measured retention is unavailable.",
+    expectationMatch: "aligned",
+    evidence: ["The title and thumbnail describe the same tutorial outcome."],
+  },
 };
 
 const transcriptAnalysis = {
@@ -71,6 +131,28 @@ const transcriptAnalysis = {
     atSeconds: 30,
     finding: "The close could state a stronger next action.",
   },
+};
+
+const measuredRetention = {
+  status: "available",
+  displayValue: "Available",
+  reason: null,
+  source: "youtube_owner_analytics",
+  overview: {
+    averageViewDurationSeconds: 42,
+    averageViewPercentage: 58.3,
+    watchTimeMinutes: 720,
+  },
+  points: [
+    { atRatio: 0.01, atSeconds: 3, audienceWatchPercentage: 100, relativeRetentionScore: 60, startedWatching: 100, stoppedWatching: 0, segmentImpressions: 100 },
+    { atRatio: 0.1, atSeconds: 30, audienceWatchPercentage: 72, relativeRetentionScore: 58, startedWatching: 0, stoppedWatching: 8, segmentImpressions: 72 },
+    { atRatio: 0.5, atSeconds: 150, audienceWatchPercentage: 48, relativeRetentionScore: 55, startedWatching: 0, stoppedWatching: 10, segmentImpressions: 48 },
+  ],
+  firstThirtySeconds: { atSeconds: 30, audienceWatchPercentage: 72 },
+  strongestSection: { startSeconds: 30, endSeconds: 45, averageRetentionPercentage: 72 },
+  relativePerformance: { averageScore: 57.7, classification: "above_typical" },
+  dips: [{ atSeconds: 150, audienceWatchPercentage: 48, changePercentagePoints: -9, startedWatching: 0, stoppedWatching: 10 }],
+  spikes: [],
 };
 
 const video = {
@@ -168,7 +250,7 @@ test("VideoInsightAnalyst requests strict GPT-5.4 vision output", async () => {
   assert.match(request.instructions, /untrusted quoted data/i);
   assert.match(request.instructions, /Do not calculate views/i);
   assert.equal(request.reasoning.effort, "none");
-  assert.equal(request.max_output_tokens, 1_800);
+  assert.equal(request.max_output_tokens, 2_800);
   assert.equal(
     request.input[0].content.some(
       (item) =>
@@ -184,7 +266,14 @@ test("VideoInsightAnalyst requests strict GPT-5.4 vision output", async () => {
   assert.doesNotMatch(textInput, /123456/);
   assert.equal(result.analysis.audience.feedbackRows.length, 8);
   assert.equal(result.analysis.packaging.tagUsefulness, "beneficial");
-  assert.equal(result.tokenBudget.ceilingTokens, 5_000);
+  assert.equal(result.analysis.nextVideo.subjects.length, 3);
+  assert.equal(
+    result.analysis.nextVideo.subjects.filter(
+      (subject) => subject.priority === "most_recommended",
+    ).length,
+    1,
+  );
+  assert.equal(result.tokenBudget.ceilingTokens, 6_500);
   assert.equal(result.tokenBudget.actualTotalTokens, 2_450);
   assert.equal(result.tokenBudget.requestCount, 1);
 });
@@ -267,6 +356,7 @@ test("VideoInsightAnalyst returns Unknown placeholders for an incomplete respons
       responses: {
         create: async () => ({
           status: "incomplete",
+          incomplete_details: { reason: "max_output_tokens" },
           output_text: '{"packaging":',
         }),
       },
@@ -310,6 +400,16 @@ test("economy transcript analysis uses one request below the token ceiling", asy
           return {
             output_text: JSON.stringify({
               ...insightAnalysis,
+              crossEvidence: {
+                ...insightAnalysis.crossEvidence,
+                retentionMoments: [{
+                  atSeconds: 150,
+                  kind: "dip",
+                  evidence: "The supplied context changes from explanation to conclusion.",
+                  hypothesis: "The abrupt transition may have reduced viewer interest.",
+                  confidence: "medium",
+                }],
+              },
               transcriptAnalysis,
             }),
             usage: {
@@ -325,6 +425,7 @@ test("economy transcript analysis uses one request below the token ceiling", asy
 
   const result = await analyst.analyse(video, {
     mode: "economy",
+    retention: measuredRetention,
     transcript: {
       status: "available",
       segments: [
@@ -341,7 +442,7 @@ test("economy transcript analysis uses one request below the token ceiling", asy
 
   assert.equal(requestCount, 1);
   assert.equal(request.reasoning.effort, "none");
-  assert.equal(request.max_output_tokens, 1_800);
+  assert.equal(request.max_output_tokens, 2_800);
   assert.ok(
     request.text.format.schema.required.includes("transcriptAnalysis"),
   );
@@ -351,8 +452,15 @@ test("economy transcript analysis uses one request below the token ceiling", asy
     3,
   );
   assert.equal(result.analysis.transcriptAnalysis.hook.score, 84);
+  assert.equal(result.analysis.crossEvidence.retentionMoments.length, 1);
+  assert.equal(result.analysis.crossEvidence.retentionMoments[0].atSeconds, 150);
   assert.equal(result.tokenBudget.actualTotalTokens, 3_950);
-  assert.ok(result.tokenBudget.actualTotalTokens <= 5_000);
+  assert.ok(result.tokenBudget.actualTotalTokens <= 6_500);
+  assert.ok(result.tokenBudget.estimatedInputTokens <= 3_700);
+  assert.match(
+    request.input[0].content.find((item) => item.type === "input_text").text,
+    /measuredRetention/,
+  );
 });
 
 test("one invalid transcript timestamp is withheld without discarding the analysis", async () => {
@@ -452,7 +560,8 @@ test("video analyser returns client-safe metadata, metrics, and insights", async
   assert.equal(result.phaseTwo.displayValue, "Unknown");
   assert.equal(result.phaseTwo.transcript.displayValue, "Unknown");
   assert.equal(result.phaseTwo.transcript.text, undefined);
-  assert.equal(result.tokenBudget.ceilingTokens, 5_000);
+  assert.equal(result.retention.status, "unknown");
+  assert.equal(result.tokenBudget.ceilingTokens, 6_500);
   assert.equal(
     result.insights.audience.feedbackRows.find(
       (row) => row.category === "praise",
@@ -461,6 +570,61 @@ test("video analyser returns client-safe metadata, metrics, and insights", async
   );
   assert.equal(result.sanity.passed, true);
   assert.match(result.sanity.checks.join(" "), /structured shape/i);
+});
+
+test("video analyser attaches verified retention timestamps to creator guidance", async () => {
+  let suppliedRetention;
+  const analyseVideo = createVideoAnalyser({
+    youtubeClient: {
+      fetchVideo: async () => video,
+      fetchChannelById: async () => ({ videos: [video] }),
+    },
+    captionService: {
+      fetchTranscript: async () => ({
+        status: "unknown",
+        displayValue: "Unknown",
+        reason: "No captions.",
+        source: null,
+        language: null,
+        segmentCount: 0,
+        segments: [],
+        text: "",
+      }),
+    },
+    retentionService: {
+      fetchVideoRetention: async () => structuredClone(measuredRetention),
+    },
+    insightAnalyst: {
+      analyse: async (_video, { retention }) => {
+        suppliedRetention = retention;
+        return {
+          analysis: structuredClone(insightAnalysis),
+          analysedCommentCount: 2,
+          tokenBudget: {
+            mode: "economy",
+            ceilingTokens: 6_500,
+            actualTotalTokens: 2_000,
+            requestCount: 1,
+          },
+        };
+      },
+    },
+    now: () => Date.parse("2026-01-04T12:00:00Z"),
+  });
+
+  const result = await analyseVideo({ url: VIDEO_URL, maxComments: 100 });
+  assert.equal(suppliedRetention.status, "available");
+  assert.equal(result.retention.points.length, 3);
+  assert.equal(
+    result.insights.nextVideo.retentionEvidence.carryForward[0].atSeconds,
+    30,
+  );
+  assert.equal(
+    result.insights.nextVideo.retentionEvidence.improvements[0].atSeconds,
+    150,
+  );
+  assert.match(result.phaseTwo.dimensions.hook.retentionContext, /72%/);
+  assert.equal(result.sanity.passed, true);
 });
 
 test("sanity check identifies a mismatched video ID", () => {

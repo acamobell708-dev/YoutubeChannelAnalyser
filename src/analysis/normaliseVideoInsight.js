@@ -167,6 +167,25 @@ export function normaliseVideoInsightAnalysis(
           : []),
       ],
     },
+    crossEvidence: {
+      ...analysis.crossEvidence,
+      summary: isNonEmptyString(analysis.crossEvidence?.summary)
+        ? analysis.crossEvidence.summary
+        : unknown,
+      expectationMatch: ["aligned", "mixed", "mismatch_risk", "unknown"].includes(
+        analysis.crossEvidence?.expectationMatch,
+      )
+        ? analysis.crossEvidence.expectationMatch
+        : "unknown",
+      evidence: Array.isArray(analysis.crossEvidence?.evidence)
+        ? analysis.crossEvidence.evidence.filter(isNonEmptyString).slice(0, 3)
+        : [],
+      retentionMoments: Array.isArray(analysis.crossEvidence?.retentionMoments)
+        ? analysis.crossEvidence.retentionMoments
+            .filter((moment) => moment && Number.isInteger(moment.atSeconds))
+            .slice(0, 3)
+        : [],
+    },
   };
   if (transcriptContext) {
     normalised.transcriptAnalysis = normaliseTranscript(

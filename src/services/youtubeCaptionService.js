@@ -82,12 +82,18 @@ function selectCaptionTrack(tracks) {
 }
 
 export class YouTubeCaptionService {
-  constructor({ oauthService, fetchImpl = fetch }) {
+  constructor({ oauthService, ownerAccess = null, fetchImpl = fetch }) {
     this.oauthService = oauthService;
+    this.ownerAccess = ownerAccess;
     this.fetchImpl = fetchImpl;
   }
 
   async fetchTranscript({ videoId, channelId, ownerSessionId }) {
+    if (this.ownerAccess) {
+      const owner = await this.ownerAccess.authorise({ ownerSessionId, channelId });
+      if (!owner.available) return unknown(owner.reason);
+      return this.#fetchTranscriptWithToken({ videoId, accessToken: owner.accessToken });
+    }
     if (!this.oauthService?.configured || !ownerSessionId) {
       return unknown(
         "Owner Google login is required for authorised caption analysis.",
@@ -106,9 +112,19 @@ export class YouTubeCaptionService {
     }
 
     try {
-      const accessToken =
-        await this.oauthService.getAccessToken(ownerSessionId);
+      const accessToken = await this.oauthService.getAccessToken(ownerSessionId);
       if (!accessToken) return unknown("The owner Google login has expired.");
+
+      return this.#fetchTranscriptWithToken({ videoId, accessToken });
+    } catch {
+      return unknown(
+        "The authorised transcript could not be retrieved from YouTube.",
+      );
+    }
+  }
+
+  async #fetchTranscriptWithToken({ videoId, accessToken }) {
+    try {
 
       const listUrl = new URL(CAPTIONS_ENDPOINT);
       listUrl.search = new URLSearchParams({
