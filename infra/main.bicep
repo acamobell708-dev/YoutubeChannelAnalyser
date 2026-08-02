@@ -43,12 +43,6 @@ param openaiChannelModel string = 'gpt-5.4'
 resource environment 'Microsoft.App/managedEnvironments@2026-01-01' = {
   name: '${containerAppName}-env'
   location: location
-  properties: {
-    // Do not create a Log Analytics workspace for this personal-use deployment.
-    appLogsConfiguration: {
-      destination: 'none'
-    }
-  }
   tags: {
     application: 'youtube-signal-lab'
     costProfile: 'personal-scale-to-zero'
