@@ -1,4 +1,5 @@
 const DAY_MS = 86_400_000;
+const RECENT_MOMENTUM_WINDOW_DAYS = 20;
 
 function round(value, places = 2) {
   if (!Number.isFinite(value)) return null;
@@ -200,8 +201,9 @@ function momentumWindow(videos, nowTimestamp, startDaysAgo, endDaysAgo) {
 }
 
 function recentMomentum(videos, nowTimestamp) {
-  const recent = momentumWindow(videos, nowTimestamp, 90, 0);
-  const previous = momentumWindow(videos, nowTimestamp, 180, 90);
+  const windowDays = RECENT_MOMENTUM_WINDOW_DAYS;
+  const recent = momentumWindow(videos, nowTimestamp, windowDays, 0);
+  const previous = momentumWindow(videos, nowTimestamp, windowDays * 2, windowDays);
   const recentSummary = summariseVideos(recent);
   const previousSummary = summariseVideos(previous);
   const previousMedian = previousSummary.medianViewsPerDay;
@@ -221,7 +223,7 @@ function recentMomentum(videos, nowTimestamp) {
     classification = "declining";
   }
   return {
-    windowDays: 90,
+    windowDays,
     recent: recentSummary,
     previous: previousSummary,
     medianViewsPerDayChangePercent: changePercent,

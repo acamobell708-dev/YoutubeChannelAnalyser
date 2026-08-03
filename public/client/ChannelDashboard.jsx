@@ -79,9 +79,14 @@ function LoadingStage() {
   );
 }
 
-function ChannelMetric({ label, value, note }) {
+function ChannelMetric({ label, value, note, tooltip }) {
   return (
-    <div className="metric">
+    <div
+      className="metric hover-help"
+      data-tip={tooltip}
+      tabIndex={0}
+      aria-label={`${label}: ${value}. ${tooltip}`}
+    >
       <span>{label}</span>
       <strong>{value}</strong>
       {note ? <small>{note}</small> : null}
@@ -137,6 +142,8 @@ function RankingTable({ title, description, videos, emphasis }) {
 function PerformanceOverview({ analysis }) {
   const performance = analysis.performance;
   const cadence = performance.uploadCadence;
+  const momentum = analysis.recentMomentum;
+  const momentumWindowDays = momentum.windowDays ?? 20;
   return (
     <article className="channel-health-card">
       <div className="section-heading">
@@ -146,21 +153,27 @@ function PerformanceOverview({ analysis }) {
         </div>
         <span className="sample-badge">No GPT calculation</span>
       </div>
+      <p className="channel-health-help">
+        Hover or focus each statistic to see how it is calculated and what it means.
+      </p>
       <div className="channel-health-grid">
         <ChannelMetric
           label="Median views/day"
           value={formatDecimal(performance.medianViewsPerDay)}
           note="Age-normalised lifetime average"
+          tooltip="For each upload, lifetime public views are divided by its age in days, using a minimum age of one day. This card shows the catalogue median. Higher means stronger age-normalised reach, not current viewing velocity."
         />
         <ChannelMetric
           label="Median engagement"
           value={formatDecimal(performance.medianEngagementPer100Views, "%")}
           note="Likes + comments per 100 views"
+          tooltip="For each upload: public likes plus public comments, divided by public views, multiplied by 100. This card shows the catalogue median. It measures public interaction density, not watch time or retention."
         />
         <ChannelMetric
           label="Top-five view share"
           value={formatDecimal(performance.topFiveViewSharePercent, "%")}
           note={humanise(performance.classification)}
+          tooltip="The five highest lifetime view counts are added together and divided by total catalogue views. A high share means the channel relies more on a few hits. Hit-driven means at least 80% top-five share or a views/day coefficient of variation of at least 1.5; distributed means no more than 55% share and a coefficient below 1. Fewer than 10 uploads is an insufficient sample."
         />
         <ChannelMetric
           label="Median upload gap"
@@ -168,18 +181,21 @@ function PerformanceOverview({ analysis }) {
           note={Number.isFinite(cadence.uploadsPer30Days)
             ? `${cadence.uploadsPer30Days} uploads per 30 days`
             : "Insufficient upload history"}
+          tooltip="Uploads are ordered by publication date, the day gap between each consecutive upload is calculated, and the median gap is shown. The note converts the observed publishing rate across the catalogue span to uploads per 30 days."
         />
         <ChannelMetric
           label="Above channel median"
           value={formatDecimal(performance.aboveMedianViewsPerDayPercent, "%")}
           note={`${formatNumber(performance.aboveMedianViewsPerDayCount)} uploads by views/day`}
+          tooltip="The percentage of analysed uploads whose lifetime-average views/day is strictly higher than the catalogue median. A result near 50% is normal; ties at the median can make it lower."
         />
         <ChannelMetric
           label="Recent momentum"
-          value={humanise(analysis.recentMomentum.classification)}
-          note={Number.isFinite(analysis.recentMomentum.medianViewsPerDayChangePercent)
-            ? `${analysis.recentMomentum.medianViewsPerDayChangePercent}% median views/day change`
-            : "Two matched 90-day windows required"}
+          value={humanise(momentum.classification)}
+          note={Number.isFinite(momentum.medianViewsPerDayChangePercent)
+            ? `${momentum.medianViewsPerDayChangePercent}% median views/day change across matched ${momentumWindowDays}-day windows`
+            : `At least two uploads in each ${momentumWindowDays}-day window required`}
+          tooltip={`Compares the median lifetime-average views/day of uploads published in the most recent ${momentumWindowDays} days with uploads published in the preceding ${momentumWindowDays} days. Improving is at least 20% higher, declining is at least 20% lower, and otherwise it is steady. Each window requires at least two uploads.`}
         />
       </div>
       <p className="analysis-caveat">

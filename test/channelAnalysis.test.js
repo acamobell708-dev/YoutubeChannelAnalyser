@@ -136,6 +136,42 @@ test("channel metrics distinguish age-normalised reach and fair cohorts", () => 
   assert.ok(Number.isFinite(newest.cohortPercentiles.viewsPerDay));
 });
 
+test("recent momentum compares matched 20-day publication windows", () => {
+  const metrics = calculateChannelMetrics(
+    [
+      {
+        ...makeVideo(1),
+        publishedAt: "2026-01-30T12:00:00Z",
+        viewCount: 400,
+      },
+      {
+        ...makeVideo(2),
+        publishedAt: "2026-01-22T12:00:00Z",
+        viewCount: 2_000,
+      },
+      {
+        ...makeVideo(3),
+        publishedAt: "2026-01-10T12:00:00Z",
+        viewCount: 2_200,
+      },
+      {
+        ...makeVideo(4),
+        publishedAt: "2026-01-02T12:00:00Z",
+        viewCount: 3_000,
+      },
+    ],
+    () => NOW,
+  );
+
+  assert.equal(metrics.recentMomentum.windowDays, 20);
+  assert.equal(metrics.recentMomentum.recent.videoCount, 2);
+  assert.equal(metrics.recentMomentum.previous.videoCount, 2);
+  assert.equal(metrics.recentMomentum.recent.medianViewsPerDay, 200);
+  assert.equal(metrics.recentMomentum.previous.medianViewsPerDay, 100);
+  assert.equal(metrics.recentMomentum.medianViewsPerDayChangePercent, 100);
+  assert.equal(metrics.recentMomentum.classification, "improving");
+});
+
 test("ChannelPerformanceAnalyst uses strict structured output and evidence IDs", async () => {
   let request;
   const videos = Array.from({ length: 12 }, (_, index) => makeVideo(index + 1));

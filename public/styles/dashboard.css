@@ -3051,12 +3051,19 @@ footer span {
   letter-spacing: -0.045em;
 }
 
+.channel-health-help {
+  margin: 12px 0 0;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .channel-health-grid {
   margin-top: 24px;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  overflow: hidden;
+  overflow: visible;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 13px;
   background: rgba(255, 255, 255, 0.1);
@@ -3064,6 +3071,24 @@ footer span {
 
 .channel-health-grid .metric {
   min-height: 112px;
+  position: relative;
+  cursor: help;
+}
+
+.channel-health-grid .metric:first-child {
+  border-radius: 12px 0 0 0;
+}
+
+.channel-health-grid .metric:nth-child(3) {
+  border-radius: 0 12px 0 0;
+}
+
+.channel-health-grid .metric:nth-child(4) {
+  border-radius: 0 0 0 12px;
+}
+
+.channel-health-grid .metric:last-child {
+  border-radius: 0 0 12px 0;
 }
 
 .channel-health-grid .metric small,
@@ -3441,6 +3466,30 @@ footer span {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .channel-health-grid .metric,
+  .channel-health-grid .metric:first-child,
+  .channel-health-grid .metric:nth-child(3),
+  .channel-health-grid .metric:nth-child(4),
+  .channel-health-grid .metric:last-child {
+    border-radius: 0;
+  }
+
+  .channel-health-grid .metric:first-child {
+    border-radius: 12px 0 0 0;
+  }
+
+  .channel-health-grid .metric:nth-child(2) {
+    border-radius: 0 12px 0 0;
+  }
+
+  .channel-health-grid .metric:nth-last-child(2) {
+    border-radius: 0 0 0 12px;
+  }
+
+  .channel-health-grid .metric:last-child {
+    border-radius: 0 0 12px 0;
+  }
+
   .ai-finding-grid,
   .next-directions > div {
     grid-template-columns: 1fr;
@@ -3675,6 +3724,24 @@ footer span {
   .cohort-grid,
   .outlier-grid {
     grid-template-columns: 1fr;
+  }
+
+  .channel-health-grid .metric,
+  .channel-health-grid .metric:first-child,
+  .channel-health-grid .metric:nth-child(2),
+  .channel-health-grid .metric:nth-child(3),
+  .channel-health-grid .metric:nth-child(4),
+  .channel-health-grid .metric:nth-last-child(2),
+  .channel-health-grid .metric:last-child {
+    border-radius: 0;
+  }
+
+  .channel-health-grid .metric:first-child {
+    border-radius: 12px 12px 0 0;
+  }
+
+  .channel-health-grid .metric:last-child {
+    border-radius: 0 0 12px 12px;
   }
 
   .catalogue-controls {
