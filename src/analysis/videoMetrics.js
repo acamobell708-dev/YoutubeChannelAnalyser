@@ -36,16 +36,23 @@ function rankWithinChannel(video, channelVideos, field) {
     Number.isFinite(item[field]),
   );
   const rank =
-    1 +
-    comparable.filter((item) => item[field] > value).length;
+    1 + comparable.filter((item) => item[field] > value).length;
 
   return { rank, outOf: comparable.length };
+}
+
+function durationMatches(video, resolvedType) {
+  if (!Number.isFinite(video.durationSeconds)) return false;
+  return resolvedType === "short"
+    ? video.durationSeconds <= 180
+    : video.durationSeconds > 180;
 }
 
 export function calculateVideoMetrics(
   video,
   channelVideos = [],
   now = Date.now,
+  { videoFormat = null, ownerOverview = null } = {},
 ) {
   const publishedAtMs = Date.parse(video.publishedAt);
   const currentTimeMs =
@@ -56,18 +63,67 @@ export function calculateVideoMetrics(
       : Number.NaN;
   const ageDays =
     Number.isFinite(ageMs) && ageMs >= 0 ? ageMs / DAY_MS : null;
+  const ageDenominator =
+    ageDays === null ? null : Math.max(ageDays, MINUTE_AS_DAYS);
+  const engagedViews = Number(ownerOverview?.engagedViews);
+  const ownerViews = Number(ownerOverview?.views);
+  const subscribersGained = Number(ownerOverview?.subscribersGained);
+  const subscribersLost = Number(ownerOverview?.subscribersLost);
+  const resolvedType = videoFormat?.resolved ?? "standard";
+  const formatCohort = channelVideos.filter((item) =>
+    durationMatches(item, resolvedType),
+  );
+  const formatCaveat =
+    resolvedType === "short"
+      ? "Format-relative public ranking uses uploads up to three minutes as a proxy unless owner creatorContentType is available."
+      : "Format-relative public ranking uses uploads over three minutes as a proxy unless owner creatorContentType is available.";
 
   return {
     ageDays: round(ageDays),
     viewsPerDay:
-      ageDays === null
+      ageDenominator === null
         ? null
-        : round(video.viewCount / Math.max(ageDays, MINUTE_AS_DAYS)),
+        : round(video.viewCount / ageDenominator),
     likesPer100Views: perHundred(video.likeCount, video.viewCount),
     commentsPer100Views: perHundred(
       video.reportedCommentCount,
       video.viewCount,
     ),
+    engagedViews: Number.isFinite(engagedViews) ? engagedViews : null,
+    engagedViewsPerDay:
+      Number.isFinite(engagedViews) && ageDenominator !== null
+        ? round(engagedViews / ageDenominator)
+        : null,
+    engagedViewSharePercent:
+      Number.isFinite(engagedViews) &&
+      Number.isFinite(ownerViews) &&
+      ownerViews > 0
+        ? perHundred(engagedViews, ownerViews)
+        : null,
+    likesPer100EngagedViews: perHundred(
+      Number(ownerOverview?.likes),
+      engagedViews,
+    ),
+    commentsPer100EngagedViews: perHundred(
+      Number(ownerOverview?.comments),
+      engagedViews,
+    ),
+    sharesPer100EngagedViews: perHundred(
+      Number(ownerOverview?.shares),
+      engagedViews,
+    ),
+    netSubscribersPer100EngagedViews: perHundred(
+      Number.isFinite(subscribersGained) && Number.isFinite(subscribersLost)
+        ? subscribersGained - subscribersLost
+        : Number.NaN,
+      engagedViews,
+    ),
+    subscribersGained: Number.isFinite(subscribersGained)
+      ? subscribersGained
+      : null,
+    subscribersLost: Number.isFinite(subscribersLost)
+      ? subscribersLost
+      : null,
     channelLifetimeRanking: {
       views: rankWithinChannel(video, channelVideos, "viewCount"),
       comments: rankWithinChannel(
@@ -78,6 +134,19 @@ export function calculateVideoMetrics(
         channelVideos,
         "commentCount",
       ),
+    },
+    formatRelativeRanking: {
+      views: rankWithinChannel(video, formatCohort, "viewCount"),
+      comments: rankWithinChannel(
+        {
+          ...video,
+          commentCount: video.reportedCommentCount,
+        },
+        formatCohort,
+        "commentCount",
+      ),
+      cohortVideoCount: formatCohort.length,
+      caveat: formatCaveat,
     },
   };
 }

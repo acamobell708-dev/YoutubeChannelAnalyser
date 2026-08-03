@@ -11,6 +11,13 @@ import {
   OwnerAuthControl,
   SanityCard,
 } from "./sharedDashboard.jsx";
+import {
+  DiscoveryStatistics,
+  FormatNextVideoSuggestions,
+  FormatPerformanceSnapshot,
+  FormatRetentionChart,
+  VideoTypeControl,
+} from "./videoFormatDashboard.jsx";
 
 const feedbackLabels = {
   praise: "Praise",
@@ -616,7 +623,7 @@ function InsightDigest({ packaging, audience, sampling, crossEvidence }) {
 function ScoreRing({ label, value }) {
   const known = Number.isInteger(value?.score);
   const tooltip = known
-    ? `${label}: ${value.score}/100. ${value.finding}${
+    ? `${label}: ${Math.round(value.score) / 10}/10. ${value.finding}${
         label === "Hook" && value.retentionContext
           ? ` Measured retention: ${value.retentionContext}`
           : ""
@@ -634,7 +641,7 @@ function ScoreRing({ label, value }) {
         role="img"
         aria-label={tooltip}
       >
-        <strong>{known ? value.score : "?"}</strong>
+        <strong>{known ? Math.round(value.score) / 10 : "?"}</strong>
       </div>
       <span>{label}</span>
     </div>
@@ -680,11 +687,10 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
 
       <p className="phase-two-score-guide">
         <b>How to read this:</b> Hook, clarity, structure, and pacing are
-        0–100 observations from the supplied caption excerpts: lower scores
-        suggest weaker evidence (for example, a 10/100 Hook is a weak opening);
-        higher scores suggest stronger evidence. Timeline timestamps show where
-        each caption excerpt occurs. When owner analytics are available, its
-        nearest measured retention point is included separately in the hover detail.
+        displayed out of 10 from the supplied caption excerpts. Scores of 7–8
+        indicate strong, usable evidence; 9–10 is exceptional rather than
+        required. Timeline timestamps show where each caption excerpt occurs.
+        Owner retention remains a separate measured signal.
       </p>
       <p className="hook-retention-context">
         <b>Hook retention context:</b> {dimensions.hook.retentionContext}
@@ -694,7 +700,7 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
         <div className="timeline-panel">
           <div className="timeline-title">
             <span>Transcript signal over time</span>
-            <small>0–100 evidence observations, not viewer retention</small>
+            <small>0–10 evidence observations, not viewer retention</small>
           </div>
           <div
             className="timeline-chart"
@@ -705,23 +711,23 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
               <span
                 key={`${point.atSeconds}-${point.label}`}
                 className={`timeline-column hover-help ${
-                  point.score < 10 ? "low-score" : ""
+                  point.score < 40 ? "low-score" : ""
                 }`}
                 style={{ "--height": `${point.score}%` }}
                 data-tip={`${formatTimestamp(point.atSeconds)} · ${
-                  point.score
-                }/100 transcript score · ${point.label}${
+                  Math.round(point.score) / 10
+                }/10 transcript score · ${point.label}${
                   Number.isFinite(point.measuredRetentionPercentage)
                     ? ` · ${point.measuredRetentionPercentage}% measured retention`
                     : " · measured retention unavailable"
                 }`}
                 tabIndex="0"
               >
-                {point.score < 10 && (
-                  <b className="timeline-score-above">{point.score}/100</b>
+                {point.score < 40 && (
+                  <b className="timeline-score-above">{Math.round(point.score) / 10}/10</b>
                 )}
                 <i aria-hidden="true">
-                  {point.score >= 10 && <b>{point.score}/100</b>}
+                  {point.score >= 40 && <b>{Math.round(point.score) / 10}/10</b>}
                 </i>
               </span>
             ))}
@@ -932,7 +938,16 @@ function RetentionChart({ retention, durationSeconds }) {
 }
 
 function ResultStage({ analysis }) {
-  const { video, metrics, insights, phaseTwo, retention, tokenBudget } = analysis;
+  const {
+    video,
+    videoFormat,
+    metrics,
+    insights,
+    phaseTwo,
+    retention,
+    discovery,
+    tokenBudget,
+  } = analysis;
 
   return (
     <section className="result-stage">
@@ -972,15 +987,25 @@ function ResultStage({ analysis }) {
         </div>
       </article>
 
-      <PhaseOneScorecard
+      <FormatPerformanceSnapshot
         video={video}
+        videoFormat={videoFormat}
         metrics={metrics}
         packaging={insights.packaging}
         retention={retention}
       />
       <PhaseTwoCompact phaseTwo={phaseTwo} tokenBudget={tokenBudget} />
-      <RetentionChart retention={retention} durationSeconds={video.durationSeconds} />
-      <NextVideoSuggestions recommendations={insights.nextVideo} retention={retention} />
+      <FormatRetentionChart
+        retention={retention}
+        durationSeconds={video.durationSeconds}
+        videoFormat={videoFormat}
+      />
+      <DiscoveryStatistics discovery={discovery} videoFormat={videoFormat} />
+      <FormatNextVideoSuggestions
+        recommendations={insights.nextVideo}
+        retention={retention}
+        videoFormat={videoFormat}
+      />
       <InsightDigest
         packaging={insights.packaging}
         audience={insights.audience}
@@ -997,6 +1022,7 @@ function App() {
   const [url, setUrl] = useState("");
   const [maxComments, setMaxComments] = useState(100);
   const [analysisMode, setAnalysisMode] = useState("economy");
+  const [videoType, setVideoType] = useState("auto");
   const [configuration, setConfiguration] = useState(null);
   const [ownerAuth, setOwnerAuth] = useState(null);
   const [dailyUsage, setDailyUsage] = useState(null);
@@ -1055,6 +1081,7 @@ function App() {
           url: url.trim(),
           maxComments: Number(maxComments),
           analysisMode,
+          videoType,
         }),
       });
       const payload = await response.json();
@@ -1117,6 +1144,11 @@ function App() {
               onDisconnect={logoutOwner}
               title="Creator-only transcript and retention analysis"
               description="Google access lets us analyse captions and measured retention for videos you own, including Hook, Clarity, Structure, and Pacing context."
+            />
+            <VideoTypeControl
+              value={videoType}
+              onChange={setVideoType}
+              disabled={loading}
             />
             <div className="form-footer">
               <label className="comment-limit">

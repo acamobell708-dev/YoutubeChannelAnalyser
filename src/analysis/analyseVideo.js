@@ -3,6 +3,8 @@ import { parseCommentLimit } from "../domain/videoUrl.js";
 import { runSanityChecks } from "./sanity.js";
 import { calculateVideoMetrics } from "./videoMetrics.js";
 import { selectRetentionMomentsForExplanation } from "./retentionMoments.js";
+import { enhanceRetentionAnalysis } from "./formatRetention.js";
+import { resolveVideoFormat } from "./videoFormat.js";
 
 function percentage(count, total) {
   if (!Number.isInteger(count) || !Number.isInteger(total) || total <= 0) {
@@ -16,6 +18,7 @@ export function createVideoAnalyser({
   insightAnalyst,
   captionService,
   retentionService,
+  videoFormatAnalyticsService = null,
   now = Date.now,
 }) {
   return async function analyseVideo({
@@ -23,6 +26,7 @@ export function createVideoAnalyser({
     maxComments,
     ownerSessionId = null,
     analysisMode = "economy",
+    videoType = "auto",
   }) {
     const commentLimit = parseCommentLimit(maxComments);
     const video = await youtubeClient.fetchVideo(url, {
@@ -33,7 +37,7 @@ export function createVideoAnalyser({
       channelId: video.channelId,
       ownerSessionId,
     };
-    const [transcript, retention] = await Promise.all([
+    let [transcript, retention, formatAnalytics] = await Promise.all([
       captionService
         ? captionService.fetchTranscript(ownerRequest)
         : Promise.resolve({
@@ -66,16 +70,67 @@ export function createVideoAnalyser({
             dips: [],
             spikes: [],
           }),
+      videoFormatAnalyticsService
+        ? videoFormatAnalyticsService.fetch({
+            ...ownerRequest,
+            publishedAt: video.publishedAt,
+            durationSeconds: video.durationSeconds,
+            sourceUrl: video.sourceUrl,
+            requestedVideoType: videoType,
+          })
+        : Promise.resolve(null),
     ]);
+    const videoFormat =
+      formatAnalytics?.videoFormat ??
+      resolveVideoFormat({
+        requested: videoType,
+        sourceUrl: video.sourceUrl,
+        durationSeconds: video.durationSeconds,
+      });
+    const formatOverview = Object.fromEntries(
+      Object.entries(formatAnalytics?.overview ?? {}).filter(
+        ([, value]) => value !== null && value !== undefined,
+      ),
+    );
+    retention = {
+      ...retention,
+      ...enhanceRetentionAnalysis(
+        retention,
+        video.durationSeconds,
+        videoFormat.resolved,
+      ),
+      overview: {
+        ...(retention.overview ?? {}),
+        ...formatOverview,
+      },
+      discovery: formatAnalytics?.discovery ?? {
+        status: "unavailable",
+        rows: [],
+        reason:
+          "Owner Google login is required for discovery and engaged-view statistics.",
+        thumbnailReach: {
+          status: "unavailable",
+          impressions: null,
+          clickThroughRate: null,
+          reason:
+            "Thumbnail impressions and click-through rate require YouTube Reporting API Reach reports.",
+        },
+      },
+      videoFormat,
+    };
     const [channel, insightResult] = await Promise.all([
       youtubeClient.fetchChannelById(video.channelId),
       insightAnalyst.analyse(video, {
         transcript,
         retention,
         mode: analysisMode,
+        videoFormat,
       }),
     ]);
-    const metrics = calculateVideoMetrics(video, channel.videos, now);
+    const metrics = calculateVideoMetrics(video, channel.videos, now, {
+      videoFormat,
+      ownerOverview: retention.overview,
+    });
     const {
       transcriptAnalysis = null,
       ...phaseOneInsightAnalysis
@@ -161,8 +216,12 @@ export function createVideoAnalyser({
               : closest,
           retention.points[0])
         : null;
-    phaseTwo.dimensions.hook.retentionContext = retention.firstThirtySeconds
-      ? `${retention.firstThirtySeconds.audienceWatchPercentage}% measured audience retention at ${retention.firstThirtySeconds.atSeconds} seconds.`
+    const openingCheckpoint =
+      videoFormat.resolved === "short"
+        ? retention.firstThreeSeconds
+        : retention.firstThirtySeconds;
+    phaseTwo.dimensions.hook.retentionContext = openingCheckpoint
+      ? `${openingCheckpoint.audienceWatchPercentage}% measured audience retention at ${openingCheckpoint.atSeconds} seconds.`
       : retention.reason;
     phaseTwo.timeline = phaseTwo.timeline.map((point) => {
       const measured = nearestRetentionPoint(point.atSeconds);
@@ -240,10 +299,12 @@ export function createVideoAnalyser({
           analysedByGpt: insightResult.analysedCommentCount,
         },
       },
+      videoFormat,
       metrics,
       insights,
       phaseTwo,
       retention,
+      discovery: retention.discovery,
       tokenBudget: insightResult.tokenBudget ?? {
         mode: "economy",
         ceilingTokens: 6_500,

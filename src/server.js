@@ -12,6 +12,7 @@ import { YouTubeAnalyticsClient } from "./services/youtubeAnalyticsClient.js";
 import { YouTubeCaptionService } from "./services/youtubeCaptionService.js";
 import { YouTubeDataClient } from "./services/youtubeDataClient.js";
 import { YouTubeRetentionService } from "./services/youtubeRetentionService.js";
+import { YouTubeVideoFormatAnalyticsService } from "./services/youtubeVideoFormatAnalyticsService.js";
 
 const youtubeClient = new YouTubeDataClient({
   apiKey: config.youtubeApiKey,
@@ -43,6 +44,10 @@ const retentionService = new YouTubeRetentionService({
   ownerAccess: ownerYouTubeAccess,
   analyticsClient: youtubeAnalyticsClient,
 });
+const videoFormatAnalyticsService = new YouTubeVideoFormatAnalyticsService({
+  ownerAccess: ownerYouTubeAccess,
+  analyticsClient: youtubeAnalyticsClient,
+});
 const performanceAnalyst = new ChannelPerformanceAnalyst({
   model: config.openaiChannelModel,
   analysisClient: openAIAnalysisClient,
@@ -53,6 +58,7 @@ const analyseVideo = createVideoAnalyser({
   insightAnalyst: videoInsightAnalyst,
   captionService,
   retentionService,
+  videoFormatAnalyticsService,
 });
 const analyseChannel = createChannelAnalyser({
   youtubeClient,

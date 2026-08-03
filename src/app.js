@@ -87,6 +87,7 @@ export function createApp({
       url: request.body?.url,
       maxComments: request.body?.maxComments,
       analysisMode: request.body?.analysisMode ?? "economy",
+      videoType: request.body?.videoType ?? "auto",
       ownerSessionId: ownerSessionId(request, config),
     }),
   });
