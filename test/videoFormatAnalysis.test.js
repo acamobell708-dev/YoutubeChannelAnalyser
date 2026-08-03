@@ -59,6 +59,53 @@ test("Short retention exposes three-second, midpoint, end and replay data", () =
   assert.ok(enhanced.events.some((event) => event.kind === "spike"));
 });
 
+test("standard retention detects changes in a sparse owner curve", () => {
+  const enhanced = enhanceRetentionAnalysis(
+    {
+      points: [
+        {
+          atRatio: 0.01,
+          atSeconds: 3,
+          audienceWatchPercentage: 100,
+          startedWatching: 100,
+          stoppedWatching: 0,
+        },
+        {
+          atRatio: 0.1,
+          atSeconds: 30,
+          audienceWatchPercentage: 72,
+          startedWatching: 0,
+          stoppedWatching: 8,
+        },
+        {
+          atRatio: 0.5,
+          atSeconds: 150,
+          audienceWatchPercentage: 48,
+          startedWatching: 0,
+          stoppedWatching: 10,
+        },
+      ],
+      firstThirtySeconds: {
+        atSeconds: 30,
+        audienceWatchPercentage: 72,
+      },
+      strongestSection: {
+        startSeconds: 30,
+        endSeconds: 45,
+        averageRetentionPercentage: 72,
+      },
+      dips: [],
+      spikes: [],
+    },
+    300,
+    "standard",
+  );
+
+  assert.equal(enhanced.dips.length, 1);
+  assert.equal(enhanced.dips[0].atSeconds, 150);
+  assert.equal(enhanced.dips[0].eventType, "topic_transition_drop");
+});
+
 test("owner Short metrics use engaged views as their denominator", () => {
   const video = {
     videoId: "abc",

@@ -94,7 +94,11 @@ function eventDetails(videoType, direction, point) {
 
 function detectEvents(points, videoType) {
   const isShort = videoType === "short";
-  const baselineWindow = isShort ? 2 : 3;
+  const desiredBaselineWindow = isShort ? 2 : 3;
+  const baselineWindow = Math.min(
+    desiredBaselineWindow,
+    Math.max(1, points.length - 1),
+  );
   const persistence = isShort ? 3 : 1;
   const threshold = isShort ? 3 : 3.5;
   const candidates = [];
