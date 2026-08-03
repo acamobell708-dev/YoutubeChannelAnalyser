@@ -70,30 +70,116 @@ export function VideoTypeControl({ value, onChange, disabled = false }) {
   );
 }
 
+function rankStanding(ranking) {
+  const available =
+    Number.isInteger(ranking?.rank) &&
+    Number.isInteger(ranking?.outOf) &&
+    ranking.outOf > 0;
+
+  if (!available) {
+    return {
+      available: false,
+      standing: 0,
+      topPercent: null,
+      rankText: "Unavailable",
+    };
+  }
+
+  const rawStanding =
+    ranking.outOf === 1
+      ? 100
+      : ((ranking.outOf - ranking.rank) / (ranking.outOf - 1)) * 100;
+
+  return {
+    available: true,
+    standing: Math.max(0, Math.min(100, rawStanding)),
+    topPercent: Math.max(
+      1,
+      Math.ceil((ranking.rank / ranking.outOf) * 100),
+    ),
+    rankText: `#${ranking.rank} of ${ranking.outOf}`,
+  };
+}
+
+function StandingBar({ label, ranking, noun, accent }) {
+  const result = rankStanding(ranking);
+  const description = result.available
+    ? `${label}: ${result.rankText} by lifetime ${noun} within the selected format cohort.`
+    : `${label} is unavailable because no comparable public ${noun} total was returned.`;
+
+  return (
+    <div
+      className={`format-standing-meter ${accent} hover-help`}
+      data-tip={description}
+      tabIndex="0"
+    >
+      <div className="format-standing-heading">
+        <span>{label}</span>
+        <strong>{result.rankText}</strong>
+      </div>
+      <div
+        className={`format-standing-track ${
+          result.available ? "" : "unavailable"
+        }`}
+        role="img"
+        aria-label={description}
+      >
+        <span style={{ width: `${result.standing}%` }}></span>
+        {result.available ? (
+          <i style={{ left: `${result.standing}%` }}></i>
+        ) : null}
+      </div>
+      <div className="format-standing-scale">
+        <small>Lower</small>
+        <b>
+          {result.available ? `Top ${result.topPercent}%` : "Unavailable"}
+        </b>
+        <small>Higher</small>
+      </div>
+      <p>Lifetime {noun} compared with the current format-relative cohort.</p>
+    </div>
+  );
+}
+
 function RankSummary({ videoFormat, metrics }) {
   const ranking = metrics.formatRelativeRanking;
   if (!ranking) return null;
-  const formatLabel = videoFormat.resolved === "short" ? "Short proxy cohort" : "Standard-video proxy cohort";
+
+  const formatLabel =
+    videoFormat.resolved === "short"
+      ? "Short proxy cohort"
+      : "Standard-video proxy cohort";
+
   return (
-    <div className="format-ranking">
-      <div>
-        <span>{formatLabel}</span>
-        <strong>
-          {Number.isInteger(ranking.views?.rank)
-            ? `#${ranking.views.rank} of ${ranking.views.outOf} by views`
-            : "View rank unavailable"}
-        </strong>
+    <section
+      className="format-ranking"
+      aria-label="Format-relative performance standing"
+    >
+      <div className="format-ranking-heading">
+        <div>
+          <span>Visual channel standing</span>
+          <strong>{formatLabel}</strong>
+        </div>
+        <small>Higher bars indicate a stronger lifetime position.</small>
       </div>
-      <div>
-        <span>Comment standing</span>
-        <strong>
-          {Number.isInteger(ranking.comments?.rank)
-            ? `#${ranking.comments.rank} of ${ranking.comments.outOf}`
-            : "Unavailable"}
-        </strong>
+
+      <div className="format-standing-grid">
+        <StandingBar
+          label="View standing"
+          ranking={ranking.views}
+          noun="views"
+          accent="views"
+        />
+        <StandingBar
+          label="Comment standing"
+          ranking={ranking.comments}
+          noun="comments"
+          accent="comments"
+        />
       </div>
-      <p>{ranking.caveat}</p>
-    </div>
+
+      <p className="format-ranking-caveat">{ranking.caveat}</p>
+    </section>
   );
 }
 

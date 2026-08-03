@@ -173,37 +173,150 @@
 
 .format-ranking {
   margin-top: 13px;
-  padding: 12px 14px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 20px;
+  padding: 16px;
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
+  border-radius: 14px;
   background: rgba(255, 255, 255, 0.025);
 }
 
-.format-ranking span,
-.format-ranking strong {
+.format-ranking-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.format-ranking-heading span,
+.format-ranking-heading strong,
+.format-standing-heading span,
+.format-standing-heading strong {
   display: block;
 }
 
-.format-ranking span {
+.format-ranking-heading span,
+.format-standing-heading span {
   color: rgba(255, 255, 255, 0.44);
   font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-.format-ranking strong {
+.format-ranking-heading strong {
   margin-top: 4px;
-  font-size: 11px;
+  font-size: 12px;
 }
 
-.format-ranking p {
-  grid-column: 1 / -1;
-  margin: 0;
+.format-ranking-heading > small {
+  max-width: 220px;
   color: rgba(255, 255, 255, 0.4);
   font-size: 8px;
   line-height: 1.4;
+  text-align: right;
+}
+
+.format-standing-grid {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.format-standing-meter {
+  min-width: 0;
+  padding: 14px;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.025);
+  cursor: help;
+}
+
+.format-standing-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.format-standing-heading strong {
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 11px;
+}
+
+.format-standing-track {
+  height: 10px;
+  margin-top: 11px;
+  position: relative;
+  overflow: visible;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.format-standing-track > span {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  transition: width 220ms ease;
+}
+
+.format-standing-meter.views .format-standing-track > span {
+  background: linear-gradient(90deg, #687129, var(--lime));
+}
+
+.format-standing-meter.comments .format-standing-track > span {
+  background: linear-gradient(90deg, #285667, #8ed7e5);
+}
+
+.format-standing-track > i {
+  width: 14px;
+  height: 14px;
+  position: absolute;
+  top: 50%;
+  border: 3px solid #20201e;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25);
+  transform: translate(-50%, -50%);
+}
+
+.format-standing-track.unavailable {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: transparent;
+}
+
+.format-standing-scale {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.format-standing-scale small {
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 7px;
+  text-transform: uppercase;
+}
+
+.format-standing-scale b {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 8px;
+}
+
+.format-standing-meter > p,
+.format-ranking-caveat {
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.format-standing-meter > p {
+  margin: 8px 0 0;
+}
+
+.format-ranking-caveat {
+  margin: 11px 0 0;
 }
 
 .discovery-card {
