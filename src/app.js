@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import path from "node:path";
 
 import express from "express";
@@ -10,54 +9,8 @@ import {
   PROJECT_ROOT,
 } from "./config.js";
 import { toPublicError } from "./errors.js";
-
-const OWNER_SESSION_COOKIE = "ytsa_owner_session";
-const OAUTH_STATE_COOKIE = "ytsa_oauth_state";
-
-function parseCookies(request) {
-  return Object.fromEntries(
-    String(request.headers.cookie || "")
-      .split(";")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .map((part) => {
-        const separator = part.indexOf("=");
-        return separator === -1
-          ? [part, ""]
-          : [
-              part.slice(0, separator),
-              decodeURIComponent(part.slice(separator + 1)),
-            ];
-      }),
-  );
-}
-
-function signSessionId(sessionId, secret) {
-  const signature = crypto
-    .createHmac("sha256", secret)
-    .update(sessionId)
-    .digest("base64url");
-  return `${sessionId}.${signature}`;
-}
-
-function verifySessionCookie(value, secret) {
-  if (!value || !secret) return null;
-  const separator = value.lastIndexOf(".");
-  if (separator < 1) return null;
-  const sessionId = value.slice(0, separator);
-  const expected = signSessionId(sessionId, secret);
-  if (value.length !== expected.length) return null;
-  return crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected))
-    ? sessionId
-    : null;
-}
-
-function ownerSessionId(request, config) {
-  return verifySessionCookie(
-    parseCookies(request)[OWNER_SESSION_COOKIE],
-    config.sessionSecret,
-  );
-}
+import { ownerSessionId } from "./auth/sessionCookies.js";
+import { registerGoogleAuthRoutes } from "./routes/googleAuthRoutes.js";
 
 function registerAnalysisRoute(app, { path, config, analyse, requestData }) {
   app.post(path, async (request, response) => {
@@ -124,92 +77,7 @@ export function createApp({
     });
   });
 
-  app.get("/api/auth/status", (request, response) => {
-    const status = googleOAuthService?.getStatus(
-      ownerSessionId(request, config),
-    ) || {
-      configured: false,
-      connected: false,
-      channels: [],
-    };
-    response.json({ ownerAuth: status });
-  });
-
-  app.get("/auth/google/start", (_request, response) => {
-    try {
-      if (!googleOAuthService?.configured) {
-        response.status(503).json({
-          error: {
-            code: "GOOGLE_OAUTH_NOT_CONFIGURED",
-            message:
-              "Google owner sign-in is not configured on this server.",
-          },
-        });
-        return;
-      }
-      const { url, state } = googleOAuthService.beginAuthorization();
-      response.cookie(OAUTH_STATE_COOKIE, state, {
-        httpOnly: true,
-        sameSite: "lax",
-        secure: config.googleOAuthRedirectUri?.startsWith("https://"),
-        maxAge: 10 * 60 * 1000,
-        path: "/auth/google",
-      });
-      response.redirect(url);
-    } catch (error) {
-      const publicError = toPublicError(error);
-      response.status(publicError.status).json(publicError.body);
-    }
-  });
-
-  app.get("/auth/google/callback", async (request, response) => {
-    try {
-      const cookies = parseCookies(request);
-      const result = await googleOAuthService.completeAuthorization({
-        code: request.query.code,
-        state: request.query.state,
-        expectedState: cookies[OAUTH_STATE_COOKIE],
-      });
-      response.clearCookie(OAUTH_STATE_COOKIE, { path: "/auth/google" });
-      response.cookie(
-        OWNER_SESSION_COOKIE,
-        signSessionId(result.sessionId, config.sessionSecret),
-        {
-          httpOnly: true,
-          sameSite: "lax",
-          secure: config.googleOAuthRedirectUri?.startsWith("https://"),
-          maxAge: 4 * 60 * 60 * 1000,
-          path: "/",
-        },
-      );
-      response.redirect("/VideoDashboard.html?owner=connected");
-    } catch {
-      response.clearCookie(OAUTH_STATE_COOKIE, { path: "/auth/google" });
-      response.redirect("/VideoDashboard.html?owner=error");
-    }
-  });
-
-  app.post("/api/auth/logout", async (request, response) => {
-    const origin = request.get("origin");
-    let originMatches = true;
-    try {
-      originMatches = !origin || new URL(origin).host === request.get("host");
-    } catch {
-      originMatches = false;
-    }
-    if (!originMatches) {
-      response.status(403).json({
-        error: {
-          code: "INVALID_ORIGIN",
-          message: "The logout request origin was not accepted.",
-        },
-      });
-      return;
-    }
-    await googleOAuthService?.logout(ownerSessionId(request, config));
-    response.clearCookie(OWNER_SESSION_COOKIE, { path: "/" });
-    response.json({ ownerAuth: { connected: false } });
-  });
+  registerGoogleAuthRoutes(app, { config, googleOAuthService });
 
   registerAnalysisRoute(app, {
     path: "/api/video-analysis",
@@ -227,7 +95,11 @@ export function createApp({
     path: "/api/channel-analysis",
     config,
     analyse: analyseChannel,
-    requestData: (request) => ({ url: request.body?.url }),
+    requestData: (request) => ({
+      url: request.body?.url,
+      analysisMode: request.body?.analysisMode ?? "economy",
+      ownerSessionId: ownerSessionId(request, config),
+    }),
   });
 
   app.use(

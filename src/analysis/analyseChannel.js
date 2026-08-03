@@ -1,5 +1,8 @@
 import { AppError } from "../errors.js";
+import { calculateChannelMetrics } from "./channelMetrics.js";
 import { runChannelSanityChecks } from "./sanity.js";
+import { selectChannelEvidence } from "./selectChannelEvidence.js";
+import { getAnalysisProfile } from "./analysisProfiles.js";
 
 function rankVideos(videos, primaryMetric) {
   return [...videos]
@@ -16,22 +19,44 @@ function rankVideos(videos, primaryMetric) {
     .slice(0, 10);
 }
 
-function clientSafeVideo(video, rank) {
+function clientSafeVideo(video, rank = null) {
   return {
-    rank,
+    ...(rank === null ? {} : { rank }),
     videoId: video.videoId,
     title: video.title,
     videoUrl: `https://www.youtube.com/watch?v=${video.videoId}`,
     publishedAt: video.publishedAt,
     durationSeconds: video.durationSeconds,
+    durationBucket: video.durationBucket,
+    formatGroup: video.formatGroup,
+    ageDays: video.ageDays,
     viewCount: video.viewCount,
     likeCount: video.likeCount,
     commentCount: video.commentCount,
+    viewsPerDay: video.viewsPerDay,
+    likesPer100Views: video.likesPer100Views,
+    commentsPer100Views: video.commentsPer100Views,
+    engagementPer100Views: video.engagementPer100Views,
+    percentiles: video.percentiles,
+    cohortPercentiles: video.cohortPercentiles,
+    cohortSize: video.cohortSize,
   };
 }
 
-export function createChannelAnalyser({ youtubeClient, performanceAnalyst }) {
-  return async function analyseChannel({ url }) {
+function clientSafeList(videos) {
+  return videos.map((video) => clientSafeVideo(video));
+}
+
+export function createChannelAnalyser({
+  youtubeClient,
+  performanceAnalyst,
+  now = Date.now,
+}) {
+  return async function analyseChannel({
+    url,
+    analysisMode = "economy",
+  }) {
+    const profile = getAnalysisProfile(analysisMode);
     const channel = await youtubeClient.fetchChannel(url);
     if (channel.videos.length === 0) {
       throw new AppError(
@@ -40,12 +65,18 @@ export function createChannelAnalyser({ youtubeClient, performanceAnalyst }) {
       );
     }
 
-    const topByViews = rankVideos(channel.videos, "viewCount");
-    const topByComments = rankVideos(channel.videos, "commentCount");
-    const performanceAnalysis = await performanceAnalyst.analyse({
+    const channelMetrics = calculateChannelMetrics(channel.videos, now);
+    const topByViews = rankVideos(channelMetrics.videos, "viewCount");
+    const topByComments = rankVideos(channelMetrics.videos, "commentCount");
+    const representativeVideos = selectChannelEvidence(
+      channelMetrics,
+      profile.maxChannelEvidenceVideos,
+    );
+    const performanceResult = await performanceAnalyst.analyse({
       channel,
-      topByViews,
-      topByComments,
+      channelMetrics,
+      representativeVideos,
+      mode: analysisMode,
     });
 
     const result = {
@@ -59,13 +90,34 @@ export function createChannelAnalyser({ youtubeClient, performanceAnalyst }) {
         videoCount: channel.videoCount,
         analysedVideoCount: channel.analysedVideoCount,
       },
+      performance: channelMetrics.summary,
+      durationCohorts: channelMetrics.durationCohorts,
+      recentMomentum: channelMetrics.recentMomentum,
+      outliers: {
+        highReachLowEngagement: clientSafeList(
+          channelMetrics.outliers.highReachLowEngagement,
+        ),
+        lowReachHighEngagement: clientSafeList(
+          channelMetrics.outliers.lowReachHighEngagement,
+        ),
+        breakout: clientSafeList(channelMetrics.outliers.breakout),
+        fairPeerUnderperformers: clientSafeList(
+          channelMetrics.outliers.fairPeerUnderperformers,
+        ),
+        consistentPerformers: clientSafeList(
+          channelMetrics.outliers.consistentPerformers,
+        ),
+      },
       topByViews: topByViews.map((video, index) =>
         clientSafeVideo(video, index + 1),
       ),
       topByComments: topByComments.map((video, index) =>
         clientSafeVideo(video, index + 1),
       ),
-      performanceAnalysis,
+      catalogue: channelMetrics.videos.map((video) => clientSafeVideo(video)),
+      performanceAnalysis: performanceResult.insight,
+      aiEvidenceVideoIds: performanceResult.suppliedVideoIds,
+      tokenBudget: performanceResult.tokenBudget,
     };
 
     const sanity = runChannelSanityChecks(result);

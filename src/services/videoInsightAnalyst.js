@@ -9,37 +9,9 @@ import {
 } from "../analysis/videoInsightSchema.js";
 import { normaliseVideoInsightAnalysis } from "../analysis/normaliseVideoInsight.js";
 import { selectRetentionMomentsForExplanation } from "../analysis/retentionMoments.js";
+import { getAnalysisProfile } from "../analysis/analysisProfiles.js";
 import { AppError } from "../errors.js";
 import { OpenAIAnalysisClient } from "./openAIAnalysisClient.js";
-
-const ANALYSIS_PROFILES = {
-  economy: {
-    id: "economy",
-    ceilingTokens: 6_500,
-    // Preserve room for the bounded retention-evidence response while staying
-    // below the requested 7,000-token maximum.
-    estimatedInputTarget: 3_700,
-    maxOutputTokens: 2_800,
-    maxCommentThreads: 8,
-    maxRepliesPerThread: 1,
-    maxTranscriptSegments: 12,
-    minimumTranscriptSegments: 4,
-    minimumCommentThreads: 3,
-    thumbnailDetail: "low",
-  },
-  heavy: {
-    id: "heavy",
-    ceilingTokens: 10_000,
-    estimatedInputTarget: 6_500,
-    maxOutputTokens: 3_000,
-    maxCommentThreads: 18,
-    maxRepliesPerThread: 2,
-    maxTranscriptSegments: 24,
-    minimumTranscriptSegments: 6,
-    minimumCommentThreads: 6,
-    thumbnailDetail: "high",
-  },
-};
 
 function boundedCommentRecords(comments, profile) {
   return comments.slice(0, profile.maxCommentThreads).map((comment) => ({
@@ -248,13 +220,7 @@ export class VideoInsightAnalyst {
   }
 
   async analyse(video, { transcript = null, retention = null, mode = "economy" } = {}) {
-    const profile = ANALYSIS_PROFILES[mode];
-    if (!profile) {
-      throw new AppError("Choose either economy or heavy analysis mode.", {
-        status: 400,
-        code: "UNSUPPORTED_ANALYSIS_MODE",
-      });
-    }
+    const profile = getAnalysisProfile(mode);
 
     const commentRecords = boundedCommentRecords(video.comments, profile);
     const transcriptSegments = boundedTranscriptSegments(transcript, profile);

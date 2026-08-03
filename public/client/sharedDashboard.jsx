@@ -94,6 +94,69 @@ export function ErrorNotice({ message }) {
   );
 }
 
+export function DailyUsageNotice({ usage }) {
+  if (!usage?.warning) return null;
+  const used = formatNumber(usage.projectedTokens ?? usage.usedTokens);
+  const limit = formatNumber(usage.limit);
+  return (
+    <div
+      className={`daily-usage-notice ${usage.locked ? "locked" : ""}`}
+      role="status"
+    >
+      <strong>
+        {usage.locked ? "Daily analysis limit reached" : "Daily token warning"}
+      </strong>
+      <span>
+        {used} of {limit} tokens used today ({usage.source}).
+        {usage.locked
+          ? " New analyses unlock at 00:00 UTC."
+          : " New analyses will lock at 200,000 tokens."}
+      </span>
+    </div>
+  );
+}
+
+export function OwnerAuthControl({
+  ownerAuth,
+  returnTo,
+  onDisconnect,
+  title,
+  description,
+}) {
+  const connectedChannels = ownerAuth?.channels
+    ?.map((channel) => channel.title)
+    .join(", ");
+  return (
+    <div className="owner-auth-strip owner-auth-priority">
+      <div>
+        <span>{title}</span>
+        <strong>
+          {ownerAuth?.connected
+            ? ownerAuth.analyticsAccess === false
+              ? "Connected, but Analytics permission needs reconnecting"
+              : `Connected: ${connectedChannels || "YouTube owner"}`
+            : "Sign in to unlock owner evidence"}
+        </strong>
+        <p>{description}</p>
+      </div>
+      {ownerAuth?.connected ? (
+        <button type="button" className="auth-action" onClick={onDisconnect}>
+          Disconnect
+        </button>
+      ) : ownerAuth?.configured ? (
+        <a
+          className="auth-action"
+          href={`/auth/google/start?returnTo=${encodeURIComponent(returnTo)}`}
+        >
+          Connect Google
+        </a>
+      ) : (
+        <span className="auth-unavailable">OAuth not configured</span>
+      )}
+    </div>
+  );
+}
+
 export function SanityCard({ sanity }) {
   return (
     <aside className={`sanity-card ${sanity.passed ? "passed" : "failed"}`}>

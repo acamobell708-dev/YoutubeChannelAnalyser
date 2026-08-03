@@ -177,9 +177,14 @@ function isDescending(items, field) {
 
 export function runChannelSanityChecks({
   channel,
+  performance,
+  durationCohorts,
+  catalogue,
   topByViews,
   topByComments,
   performanceAnalysis,
+  aiEvidenceVideoIds,
+  tokenBudget,
 }) {
   const checks = [];
   const errors = [];
@@ -219,10 +224,66 @@ export function runChannelSanityChecks({
     errors.push("comment ranking is empty, oversized, or incorrectly sorted");
   }
 
-  if (performanceAnalysis.trim()) {
-    checks.push("GPT-5.4 performance analysis is non-empty");
+  if (
+    catalogue.length === channel.analysedVideoCount &&
+    catalogue.every(
+      (video) =>
+        Number.isFinite(video.viewsPerDay) &&
+        video.viewsPerDay >= 0 &&
+        Number.isFinite(video.percentiles?.viewsPerDay) &&
+        video.percentiles.viewsPerDay >= 0 &&
+        video.percentiles.viewsPerDay <= 100,
+    ) &&
+    durationCohorts.reduce(
+      (total, cohort) => total + cohort.videoCount,
+      0,
+    ) === catalogue.length &&
+    Number.isFinite(performance.medianViewsPerDay)
+  ) {
+    checks.push("whole-catalogue derived metrics are complete and bounded");
   } else {
-    errors.push("GPT-5.4 performance analysis is empty");
+    errors.push("whole-catalogue derived metrics are incomplete or invalid");
+  }
+
+  const allowedEvidence = new Set(aiEvidenceVideoIds);
+  const aiReferences = performanceAnalysis?.status === "available"
+    ? [
+        ...performanceAnalysis.strengths,
+        ...performanceAnalysis.weaknesses,
+        ...performanceAnalysis.nextVideoDirections,
+      ].flatMap((finding) => finding.evidenceVideoIds)
+    : [];
+  if (
+    (performanceAnalysis?.status === "available" &&
+      performanceAnalysis.summary?.assessment?.trim() &&
+      aiReferences.length > 0 &&
+      aiReferences.every((videoId) => allowedEvidence.has(videoId))) ||
+    (performanceAnalysis?.status === "unavailable" &&
+      performanceAnalysis.reason?.trim())
+  ) {
+    checks.push(
+      performanceAnalysis.status === "available"
+        ? "GPT-5.4 findings reference only supplied evidence"
+        : "AI unavailability is explicit and deterministic metrics remain usable",
+    );
+  } else {
+    errors.push("structured channel analysis is missing or unsupported");
+  }
+
+  const supportedBudget =
+    (tokenBudget?.mode === "economy" && tokenBudget.ceilingTokens === 6_500) ||
+    (tokenBudget?.mode === "heavy" && tokenBudget.ceilingTokens === 10_000);
+  if (
+    supportedBudget &&
+    tokenBudget.requestCount === 1 &&
+    (tokenBudget.actualTotalTokens === null ||
+      (Number.isInteger(tokenBudget.actualTotalTokens) &&
+        tokenBudget.actualTotalTokens >= 0 &&
+        tokenBudget.actualTotalTokens <= tokenBudget.ceilingTokens))
+  ) {
+    checks.push(`${tokenBudget.mode} mode stayed within its token ceiling`);
+  } else {
+    errors.push("channel token budget is missing or invalid");
   }
 
   return {

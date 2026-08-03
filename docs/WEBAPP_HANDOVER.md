@@ -26,11 +26,16 @@ the tests before making changes; this project may have uncommitted local work.
   analytical limits instead of presenting AI interpretation as measured fact.
 - Google OAuth is implemented in code, but is optional. Without login, public
   analysis still runs and owner-dependent fields are returned as `Unknown`.
-- The repository's current GitHub Actions workflow is CI only: it tests and
-  builds on pushes and pull requests. It does not build an image or deploy to
-  Azure or any other host.
-- There is no Dockerfile, infrastructure-as-code file, hosting resource, or
-  continuous deployment workflow in this repository yet.
+- The repository includes a production deployment path: `Dockerfile`,
+  `.dockerignore`, `infra/main.bicep`, and `.github/workflows/deploy.yml`.
+- Pushes to `main` run tests/build, publish an immutable image to public GHCR,
+  sign in to Azure using GitHub OIDC, deploy the Container App and health-check
+  `/api/health`.
+- The dedicated resource group is `youtube-signal-lab-rg` and the intended
+  application name is `adam-youtube-signal-lab-2026`. No separate managed
+  environment can be created in this subscription: it is at the Container Apps
+  environment limit. The deployment therefore attaches this app to the existing
+  `adam-cloud-storage-app-2026-environment` in UK South.
 
 ## Architecture
 
@@ -247,6 +252,7 @@ screenshots, GitHub secrets visible in logs, or documentation.
 | --- | --- | --- |
 | `YOUTUBE_API_KEY` | Public video/channel analysis | Restrict it to YouTube Data API v3. |
 | `OPENAI_API_KEY` | GPT analysis | Kept server-side only. |
+| `OPENAI_ADMIN_KEY` | Optional organisation-level usage check | Leave unset unless an OpenAI organisation admin key is deliberately available. It is not the same as `OPENAI_API_KEY`. |
 | `OPENAI_VIDEO_MODEL` | Video GPT model selection | Default: `gpt-5.4`. |
 | `OPENAI_CHANNEL_MODEL` | Channel GPT model selection | Default: `gpt-5.4`. |
 | `GOOGLE_OAUTH_CLIENT_ID` | Optional owner sign-in | Google Web application client ID. Not a secret, but keep server-side. |
@@ -385,33 +391,33 @@ YouTube API policy requirements rather than relying only on this document.
 
 ### What is not ready today
 
-- No hosting environment has been provisioned for this project.
-- No image build is configured.
-- No Dockerfile or `.dockerignore` exists.
-- No deployment workflow is in `.github/workflows/`.
+- A separate managed environment is not available because the Azure
+  subscription has reached its global Container Apps environment limit.
+- The first successful app deployment is still pending. Do not consider the
+  application URL, Google production OAuth redirect URI, or Azure costs
+  verified until the GitHub deployment and health check have succeeded.
 - OAuth sessions and token records are process-local memory, so they vanish on
   restart and do not work reliably across multiple replicas.
-- No production secret store, central session store, observability policy or
-  backup/retention policy is configured.
+- There is no central session store, observability policy, or backup/retention
+  policy. Application secrets are injected as Azure Container App secrets.
 
 ### Required work before hosting
 
-1. **Choose hosting.** Azure Container Apps is a reasonable fit for this Node
-   app because it supports a single container, HTTPS ingress, revisions and
-   scale-to-zero. Do not reuse an unrelated application's Container App.
-2. **Containerise the app.** Add a multi-stage Dockerfile that builds React,
-   installs production dependencies, starts `node src/server.js`, excludes
-   `.env`, and exposes port 3000. Test the image locally before deployment.
-3. **Provision an isolated application.** Use a dedicated resource group and
-   Container App/application URL. The new project must not share another
-   project's environment variables or secrets.
-4. **Set ingress and scaling.** Use HTTPS external ingress with target port
-   3000. For small personal use, start with minimum replicas 0 and a low maximum
-   (such as 1) after considering concurrency/cold-start trade-offs.
-5. **Use a proper secret store.** Store YouTube/OpenAI/OAuth client secrets and
-   session-signing secret in a host secret service. For Azure, use Container
-   App secrets initially and prefer Key Vault references with managed identity
-   for production.
+1. **Complete the first deployment.** Add the GitHub `production` environment
+   variable `AZURE_MANAGED_ENVIRONMENT_ID` with the full resource ID of
+   `adam-cloud-storage-app-2026-environment`; retain `AZURE_LOCATION=uksouth`.
+2. **Keep identities and data separated.** The GitHub OIDC service principal
+   `youtube-signal-lab-github` has Contributor on `youtube-signal-lab-rg`. It
+   also requires Contributor scoped to the *single existing managed environment*
+   in order to attach the new app. Do not grant it access to the old resource
+   group, and do not reuse the old app's secrets.
+3. **Set ingress and scaling.** The Bicep template uses HTTPS external ingress,
+   target port 3000, `minReplicas: 0`, `maxReplicas: 1`, and one concurrent HTTP
+   request per replica. This intentionally favours cost control over cold-start
+   speed or parallel requests.
+4. **Use a proper secret store.** Container App secrets are acceptable for this
+   personal deployment; prefer Key Vault references with managed identity before
+   a broader production release.
 6. **Replace in-memory OAuth state/session storage.** Persist pending OAuth
    state and encrypted token/session records in a shared secure store (for
    example Redis plus encrypted-at-rest database/Key Vault-backed token
@@ -420,13 +426,13 @@ YouTube API policy requirements rather than relying only on this document.
    cookies.
 7. **Define token encryption and rotation.** Encrypt refresh tokens at rest,
    define key rotation, revoke tokens on logout/deletion, and expire sessions.
-8. **Deploy only after CI.** Keep tests/build as a mandatory gate. Add a
-   separate deploy workflow that builds an immutable image tagged by Git commit,
-   pushes it to a registry, deploys a new revision, waits for a health check,
-   and only then routes production traffic.
-9. **Use least-privilege cloud identity.** Prefer GitHub OIDC/federated Azure
-   credentials rather than a long-lived Azure client secret in GitHub. Give the
-   deployment identity only the registry/app permissions it needs.
+8. **Deploy only after CI.** The existing deploy workflow builds an immutable
+   SHA-tagged image, pushes it to GHCR, deploys, then checks `/api/health`.
+   Preserve that order and retain the separate CI workflow for pull requests.
+9. **Use least-privilege cloud identity.** The workflow uses GitHub
+   OIDC/federated Azure credentials; never add an Azure client secret. Keep
+   Contributor restricted to the new resource group plus the one shared managed
+   environment resource.
 10. **Add production observability.** Structured logs without secrets, error
     monitoring, request IDs, uptime/health monitoring, alerts and a documented
     rollback procedure are required.
@@ -445,7 +451,7 @@ YouTube API policy requirements rather than relying only on this document.
 GitHub main push
   -> CI: npm ci, npm test, npm run build
   -> build immutable container image tagged with commit SHA
-  -> push image to private registry
+  -> push image to public GHCR package (must contain no secrets)
   -> deploy new Container App revision
   -> health-check /api/health
   -> route traffic to verified revision
@@ -453,8 +459,8 @@ GitHub main push
 ```
 
 Keep deployment credentials, API keys and OAuth secrets out of GitHub source.
-GitHub Actions needs only deployment identity configuration, not application
-secrets, if the host injects them at runtime.
+The workflow currently passes application secrets from the protected GitHub
+`production` environment into Container App secrets at deployment time.
 
 ### Cost considerations
 
@@ -463,6 +469,11 @@ secrets, if the host injects them at runtime.
 - On a consumption-based host that scales to zero, there is no running-app
   usage while zero replicas are active, but registries, stored images, logging,
   egress and build services can still incur charges.
+- Reusing the existing managed environment avoids creating another environment
+  (and bypasses the subscription quota), but both apps share its network and
+  logging destination. New app logs can therefore add Log Analytics ingestion
+  cost. Keep logging modest and add a resource-group budget alert before
+  regular use.
 - New deployments create revisions/images; inactive revisions may have no
   compute charge but should still be pruned according to the host/registry
   retention policy.
@@ -503,6 +514,10 @@ secrets, if the host injects them at runtime.
 | Video analysis fails budget check | Input cannot be sufficiently trimmed or provider reports excessive usage | Keep comments/captions bounded; inspect non-secret logs |
 | Browser displays an old dashboard | Cached browser asset | HTML/static server sets no-cache; hard-refresh and verify current asset version |
 | CI fails | Test/build regression | Open failing GitHub Actions step; run `npm test` and `npm run build` locally |
+| Deployment says `MaxNumberOfGlobalEnvironmentsInSubExceeded` | Bicep is trying to create another managed environment | Use the existing environment ID; the template must create only the Container App |
+| Deployment says `AuthorizationFailed` for `Microsoft.Resources/deployments/validate` | Wrong GitHub `AZURE_CLIENT_ID`, or role assignment has not propagated | Use the Application (client) ID of `youtube-signal-lab-github`; confirm Contributor on `youtube-signal-lab-rg` |
+| Deployment cannot attach to the existing environment | Deployment identity lacks access at that resource scope | Assign Contributor to `youtube-signal-lab-github` on `adam-cloud-storage-app-2026-environment`, not the old resource group |
+| `ContainerAppSecretInvalid` for `openai-admin-key` | An empty `OPENAI_ADMIN_KEY` was passed to Azure | Leave it unset; the Bicep template conditionally omits the secret and environment variable |
 
 ## Key external references
 

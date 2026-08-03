@@ -2,11 +2,13 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   ConfigurationNotice,
+  DailyUsageNotice,
   ErrorNotice,
   Footer,
   formatDate,
   formatNumber,
   Header,
+  OwnerAuthControl,
   SanityCard,
 } from "./sharedDashboard.jsx";
 
@@ -61,23 +63,6 @@ function formatTimestamp(seconds) {
   if (!Number.isInteger(seconds) || seconds < 0) return "Unknown";
   const minutes = Math.floor(seconds / 60);
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function DailyUsageNotice({ usage }) {
-  if (!usage?.warning) return null;
-  const used = formatNumber(usage.projectedTokens ?? usage.usedTokens);
-  const limit = formatNumber(usage.limit);
-  return (
-    <div className={`daily-usage-notice ${usage.locked ? "locked" : ""}`} role="status">
-      <strong>{usage.locked ? "Daily analysis limit reached" : "Daily token warning"}</strong>
-      <span>
-        {used} of {limit} tokens used today ({usage.source}).
-        {usage.locked
-          ? " New analyses unlock at 00:00 UTC."
-          : " New analyses will lock at 200,000 tokens."}
-      </span>
-    </div>
-  );
 }
 
 function SiteValueExplanation() {
@@ -1126,33 +1111,13 @@ function App() {
                 required
               />
             </div>
-            <div className="owner-auth-strip owner-auth-priority">
-              <div>
-                <span>Creator-only transcript and retention analysis</span>
-                <strong>
-                  {ownerAuth?.connected
-                    ? ownerAuth.analyticsAccess === false
-                      ? "Connected, but retention permission needs reconnecting"
-                      : `Connected: ${ownerAuth.channels.map((channel) => channel.title).join(", ")}`
-                    : "Sign in to unlock owner evidence"}
-                </strong>
-                <p>
-                  Google access lets us analyse captions and measured retention
-                  for videos you own, including Hook, Clarity, Structure, and Pacing context.
-                </p>
-              </div>
-              {ownerAuth?.connected ? (
-                <button type="button" className="auth-action" onClick={logoutOwner}>
-                  Disconnect
-                </button>
-              ) : ownerAuth?.configured ? (
-                <a className="auth-action" href="/auth/google/start">
-                  Connect Google
-                </a>
-              ) : (
-                <span className="auth-unavailable">OAuth not configured</span>
-              )}
-            </div>
+            <OwnerAuthControl
+              ownerAuth={ownerAuth}
+              returnTo="/VideoDashboard.html"
+              onDisconnect={logoutOwner}
+              title="Creator-only transcript and retention analysis"
+              description="Google access lets us analyse captions and measured retention for videos you own, including Hook, Clarity, Structure, and Pacing context."
+            />
             <div className="form-footer">
               <label className="comment-limit">
                 <span>Comment sample</span>

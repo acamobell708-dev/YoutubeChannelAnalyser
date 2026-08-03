@@ -125,15 +125,20 @@ test("channel analysis endpoint returns a mocked successful result", async () =>
     analyseVideo: async () => {
       throw new Error("not called");
     },
-    analyseChannel: async ({ url }) => {
+    analyseChannel: async ({ url, analysisMode, ownerSessionId }) => {
       assert.equal(url, "https://www.youtube.com/@example");
+      assert.equal(analysisMode, "heavy");
+      assert.equal(ownerSessionId, null);
       return expected;
     },
   });
 
   const response = await request(app)
     .post("/api/channel-analysis")
-    .send({ url: "https://www.youtube.com/@example" })
+    .send({
+      url: "https://www.youtube.com/@example",
+      analysisMode: "heavy",
+    })
     .expect(200);
 
   assert.deepEqual(response.body.analysis, expected);
@@ -239,4 +244,40 @@ test("owner OAuth session stays in an HttpOnly cookie and reaches analysis", asy
     })
     .expect(200);
   assert.equal(receivedOwnerSessionId, "server-only-session-id");
+});
+
+test("owner OAuth returns to the dashboard that started sign-in", async () => {
+  const oauthConfig = {
+    ...readyConfig,
+    hasGoogleOAuth: true,
+    sessionSecret: "s".repeat(32),
+  };
+  const googleOAuthService = {
+    configured: true,
+    beginAuthorization: () => ({
+      state: "channel-state",
+      url: "https://accounts.google.com/o/oauth2/v2/auth?state=channel-state",
+    }),
+    completeAuthorization: async () => ({ sessionId: "channel-session" }),
+    getStatus: () => ({ configured: true, connected: false, channels: [] }),
+    logout: async () => undefined,
+  };
+  const app = createApp({
+    config: oauthConfig,
+    googleOAuthService,
+    analyseVideo: async () => ({}),
+    analyseChannel: async () => ({}),
+  });
+  const agent = request.agent(app);
+
+  await agent
+    .get("/auth/google/start?returnTo=%2FChannelDashbaord.html")
+    .expect(302);
+  const callback = await agent
+    .get("/auth/google/callback?code=code&state=channel-state")
+    .expect(302);
+  assert.equal(
+    callback.headers.location,
+    "/ChannelDashbaord.html?owner=connected",
+  );
 });
