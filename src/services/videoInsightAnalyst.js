@@ -131,6 +131,10 @@ function createContent(metadata, thumbnailUrl, thumbnailDetail) {
 
 function buildRetentionMomentContext(retention, transcriptSegments, comments) {
   if (retention?.status !== "available") return [];
+
+  const commentWindowSeconds =
+    retention.videoFormat?.resolved === "short" ? 5 : 30;
+
   return selectRetentionMomentsForExplanation(retention).map((moment) => {
     const nearestTranscript = transcriptSegments.length
       ? transcriptSegments.reduce((closest, segment) =>
@@ -141,16 +145,25 @@ function buildRetentionMomentContext(retention, transcriptSegments, comments) {
       : null;
     const timestampedCommentCount = comments.reduce(
       (count, comment) => count + [...(comment.timestamps ?? []), ...(comment.replies ?? []).flatMap((reply) => reply.timestamps ?? [])]
-        .filter((timestamp) => Math.abs(timestamp.seconds - moment.atSeconds) <= 30).length,
+        .filter(
+          (timestamp) =>
+            Math.abs(timestamp.seconds - moment.atSeconds) <=
+            commentWindowSeconds,
+        ).length,
       0,
     );
     return {
       kind: moment.kind,
+      eventType: moment.eventType ?? null,
+      eventLabel:
+        moment.label ??
+        (moment.kind === "dip" ? "Retention drop" : "Retention rise"),
       atSeconds: moment.atSeconds,
       audienceWatchPercentage: moment.audienceWatchPercentage,
       changePercentagePoints: moment.changePercentagePoints,
       nearestTranscriptAtSeconds: nearestTranscript?.atSeconds ?? null,
       timestampedCommentCount,
+      commentWindowSeconds,
     };
   });
 }
@@ -279,7 +292,7 @@ export class VideoInsightAnalyst {
       `When ${minimumTimelinePoints} or more transcript excerpts are supplied, return at least ${minimumTimelinePoints} timeline points using supplied timestamps.`,
       "Score transcript Hook, Clarity, Structure, Pacing and timeline on the existing 0–100 schema, calibrated leniently for display as /10: 90–100 exceptional, 75–89 strong, 60–74 competent, 40–59 mixed, below 40 weak. Do not reserve scores above 80 for perfection.",
       "The thumbnail is one still image and the video itself was not watched. Never infer unavailable visual or audio events.",
-      "For each supplied retentionMomentContext item, return one matching crossEvidence.retentionMoments item; describe a possible explanation, not a proven cause.",
+      "For each supplied retentionMomentContext item, return one matching crossEvidence.retentionMoments item. Use its eventLabel, measured direction, nearest supplied caption context, and nearby timestamped-comment count. Explain a plausible reason for that specific moment, not a generic retention tip, and never present the hypothesis as proven causation.",
       "Keep the complete JSON under 1,300 output tokens. Use fragments, avoid repeated evidence, keep summaries under 30 words and most other text fields under 18 words.",
       "Before returning, verify every required schema field is present and exactly three subjects are supplied.",
     ].join(" ");

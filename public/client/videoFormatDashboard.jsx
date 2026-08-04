@@ -449,6 +449,110 @@ export function DiscoveryStatistics({ discovery, videoFormat }) {
   );
 }
 
+function humaniseRetentionLabel(value) {
+  return String(value ?? "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function RetentionMomentExplanations({ retention, short }) {
+  const moments = retention.momentExplanations ?? [];
+  if (!moments.length) return null;
+
+  return (
+    <section className="retention-ai-explanations">
+      <div className="retention-ai-heading">
+        <div>
+          <p className="eyebrow">Measured change + AI interpretation</p>
+          <h3>
+            {short
+              ? "Why these Short moments may have changed"
+              : "Why these video moments may have changed"}
+          </h3>
+        </div>
+        <span>{moments.length} explained moment{moments.length === 1 ? "" : "s"}</span>
+      </div>
+
+      <p className="retention-ai-disclaimer">
+        YouTube supplies the measured retention change. GPT uses nearby
+        owner-authorised caption excerpts and timestamped comments to suggest a
+        possible explanation. It is evidence-led interpretation, not proof of
+        causation.
+      </p>
+
+      <div className="retention-ai-grid">
+        {moments.map((moment, index) => {
+          const eventLabel =
+            moment.label ??
+            (moment.kind === "dip" ? "Retention drop" : "Retention rise");
+          const transcriptAvailable = Number.isInteger(
+            moment.nearestTranscriptAtSeconds,
+          );
+          const nearbyComments = moment.timestampedCommentCount ?? 0;
+
+          return (
+            <article
+              className={`retention-ai-card ${moment.kind}`}
+              id={`retention-explanation-${index + 1}`}
+              key={`${moment.kind}-${moment.atSeconds}`}
+            >
+              <header>
+                <span className="retention-ai-index">{index + 1}</span>
+                <div>
+                  <small>{eventLabel}</small>
+                  <strong>{timestamp(moment.atSeconds)}</strong>
+                </div>
+                <span className={`retention-ai-change ${moment.kind}`}>
+                  {moment.changePercentagePoints > 0 ? "+" : ""}
+                  {moment.changePercentagePoints} pts
+                </span>
+              </header>
+
+              <p className="retention-ai-hard-evidence">
+                <b>{decimal(moment.audienceWatchPercentage, "%")} retained</b>
+                <span>
+                  Transcript near{" "}
+                  {transcriptAvailable
+                    ? timestamp(moment.nearestTranscriptAtSeconds)
+                    : "unavailable"}
+                </span>
+                <span>
+                  {nearbyComments} nearby timestamped comment
+                  {nearbyComments === 1 ? "" : "s"}
+                </span>
+              </p>
+
+              <div className="retention-ai-copy">
+                <p>
+                  <b>Evidence context</b>
+                  {moment.evidence ??
+                    "No AI evidence paraphrase was returned for this measured moment."}
+                </p>
+                <p>
+                  <b>Possible explanation</b>
+                  {moment.hypothesis ??
+                    "No AI hypothesis was returned. The measured change remains valid."}
+                </p>
+              </div>
+
+              <footer>
+                <span>
+                  {moment.confidence
+                    ? `${humaniseRetentionLabel(moment.confidence)} confidence`
+                    : "Confidence unavailable"}
+                </span>
+                {moment.eventType ? (
+                  <small>{humaniseRetentionLabel(moment.eventType)}</small>
+                ) : null}
+              </footer>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function chartGeometry(points, detailed) {
   const width = detailed ? 1240 : 900;
   const height = 330;
@@ -489,6 +593,20 @@ export function FormatRetentionChart({ retention, durationSeconds, videoFormat }
         { ratio: 0.5, label: "Midpoint" },
         { ratio: 1, label: "End" },
       ];
+
+  const explanationMarkers = (retention.momentExplanations ?? []).map(
+    (moment, index) => {
+      const point = points.reduce(
+        (closest, candidate) =>
+          Math.abs(candidate.atSeconds - moment.atSeconds) <
+          Math.abs(closest.atSeconds - moment.atSeconds)
+            ? candidate
+            : closest,
+        points[0],
+      );
+      return { moment, point, index };
+    },
+  );
 
   return (
     <article className={`retention-card format-retention-card ${short ? "short-retention-chart" : ""}`}>
@@ -544,6 +662,41 @@ export function FormatRetentionChart({ retention, durationSeconds, videoFormat }
             <g key={marker.label}>
               <line x1={g.x(marker.ratio)} x2={g.x(marker.ratio)} y1={g.top} y2={g.bottom} className="retention-format-marker" />
               <text x={g.x(marker.ratio)} y={g.bottom + 29} textAnchor={marker.ratio === 1 ? "end" : marker.ratio === 0 ? "start" : "middle"} className="retention-axis-label">{marker.label}</text>
+            </g>
+          ))}
+          {explanationMarkers.map(({ moment, point, index }) => (
+            <g
+              className={`retention-ai-chart-marker ${moment.kind}`}
+              key={`ai-${moment.kind}-${moment.atSeconds}`}
+            >
+              <line
+                x1={g.x(point.atRatio)}
+                x2={g.x(point.atRatio)}
+                y1={g.top}
+                y2={g.bottom}
+                className="retention-ai-marker-line"
+              />
+              <circle
+                cx={g.x(point.atRatio)}
+                cy={g.y(point.audienceWatchPercentage)}
+                r="9"
+                className="retention-ai-marker-point"
+              />
+              <text
+                x={g.x(point.atRatio)}
+                y={g.y(point.audienceWatchPercentage) + 3}
+                textAnchor="middle"
+                className="retention-ai-marker-number"
+              >
+                {index + 1}
+              </text>
+              <title>
+                {`${index + 1}. ${moment.label ?? moment.kind} at ${timestamp(
+                  moment.atSeconds,
+                )}: ${moment.changePercentagePoints > 0 ? "+" : ""}${
+                  moment.changePercentagePoints
+                } points`}
+              </title>
             </g>
           ))}
           {points.slice(1).map((point, index) => {
@@ -626,6 +779,8 @@ export function FormatRetentionChart({ retention, durationSeconds, videoFormat }
           </div>
         )) : <p>No sustained format-specific change met the detection threshold.</p>}
       </div>
+
+      <RetentionMomentExplanations retention={retention} short={short} />
     </article>
   );
 }

@@ -56,7 +56,9 @@ test("Short retention exposes three-second, midpoint, end and replay data", () =
   assert.equal(enhanced.end.atRatio, 1);
   assert.equal(enhanced.chart.replayDetected, true);
   assert.ok(enhanced.strongestAfterHook);
-  assert.ok(enhanced.events.some((event) => event.kind === "spike"));
+  const replayEvent = enhanced.events.find((event) => event.kind === "spike");
+  assert.ok(replayEvent);
+  assert.equal(replayEvent.label, "Replay spike");
 });
 
 test("standard retention detects changes in a sparse owner curve", () => {

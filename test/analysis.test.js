@@ -151,7 +151,15 @@ const measuredRetention = {
   firstThirtySeconds: { atSeconds: 30, audienceWatchPercentage: 72 },
   strongestSection: { startSeconds: 30, endSeconds: 45, averageRetentionPercentage: 72 },
   relativePerformance: { averageScore: 57.7, classification: "above_typical" },
-  dips: [{ atSeconds: 150, audienceWatchPercentage: 48, changePercentagePoints: -9, startedWatching: 0, stoppedWatching: 10 }],
+  dips: [{
+    atSeconds: 150,
+    audienceWatchPercentage: 48,
+    changePercentagePoints: -9,
+    startedWatching: 0,
+    stoppedWatching: 10,
+    eventType: "topic_transition_drop",
+    label: "Topic-transition drop",
+  }],
   spikes: [],
 };
 
@@ -457,10 +465,12 @@ test("economy transcript analysis uses one request below the token ceiling", asy
   assert.equal(result.tokenBudget.actualTotalTokens, 3_950);
   assert.ok(result.tokenBudget.actualTotalTokens <= 6_500);
   assert.ok(result.tokenBudget.estimatedInputTokens <= 3_700);
-  assert.match(
-    request.input[0].content.find((item) => item.type === "input_text").text,
-    /measuredRetention/,
-  );
+  const inputText = request.input[0].content.find(
+    (item) => item.type === "input_text",
+  ).text;
+  assert.match(inputText, /measuredRetention/);
+  assert.match(inputText, /Topic-transition drop/);
+  assert.match(inputText, /commentWindowSeconds/);
 });
 
 test("one invalid transcript timestamp is withheld without discarding the analysis", async () => {

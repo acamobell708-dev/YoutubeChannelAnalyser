@@ -443,6 +443,31 @@
   stroke-dasharray: 3 5;
 }
 
+.retention-ai-marker-line {
+  stroke: rgba(255, 255, 255, 0.18);
+  stroke-dasharray: 2 5;
+}
+
+.retention-ai-marker-point {
+  stroke: #182321;
+  stroke-width: 3;
+}
+
+.retention-ai-chart-marker.dip .retention-ai-marker-point {
+  fill: #ff9494;
+}
+
+.retention-ai-chart-marker.spike .retention-ai-marker-point {
+  fill: var(--lime);
+}
+
+.retention-ai-marker-number {
+  fill: #182321;
+  font-size: 8px;
+  font-weight: 900;
+  pointer-events: none;
+}
+
 .replay-point {
   fill: #ff963f;
 }
@@ -545,6 +570,184 @@
 .retention-event-grid > p {
   color: rgba(255, 255, 255, 0.45);
   font-size: 9px;
+}
+
+.retention-ai-explanations {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid rgba(203, 228, 91, 0.2);
+  border-radius: 14px;
+  background:
+    linear-gradient(135deg, rgba(203, 228, 91, 0.045), transparent 55%),
+    rgba(255, 255, 255, 0.025);
+}
+
+.retention-ai-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.retention-ai-heading h3 {
+  margin: 3px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(21px, 2.4vw, 29px);
+  font-weight: 400;
+}
+
+.retention-ai-heading > span {
+  padding: 6px 8px;
+  border: 1px solid rgba(203, 228, 91, 0.22);
+  border-radius: 999px;
+  color: var(--lime);
+  font-size: 7px;
+  font-weight: 850;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.retention-ai-disclaimer {
+  max-width: 820px;
+  margin: 9px 0 14px;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.retention-ai-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 9px;
+}
+
+.retention-ai-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.retention-ai-card.dip {
+  border-top: 3px solid #ff9494;
+}
+
+.retention-ai-card.spike {
+  border-top: 3px solid var(--lime);
+}
+
+.retention-ai-card > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.retention-ai-index {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.11);
+  color: white;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.retention-ai-card header small,
+.retention-ai-card header strong {
+  display: block;
+}
+
+.retention-ai-card header small {
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.retention-ai-card header strong {
+  margin-top: 3px;
+  color: white;
+  font-size: 12px;
+}
+
+.retention-ai-change {
+  padding: 5px 7px;
+  border-radius: 999px;
+  font-size: 8px;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.retention-ai-change.dip {
+  background: rgba(255, 148, 148, 0.12);
+  color: #ffb4b4;
+}
+
+.retention-ai-change.spike {
+  background: rgba(203, 228, 91, 0.12);
+  color: var(--lime);
+}
+
+.retention-ai-hard-evidence {
+  margin: 12px 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.retention-ai-hard-evidence b,
+.retention-ai-hard-evidence span {
+  padding: 5px 7px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.055);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 7px;
+}
+
+.retention-ai-hard-evidence b {
+  color: #8ed7e5;
+}
+
+.retention-ai-copy {
+  margin-top: 11px;
+  display: grid;
+  gap: 8px;
+}
+
+.retention-ai-copy p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.66);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.retention-ai-copy b {
+  margin-bottom: 3px;
+  display: block;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.retention-ai-card > footer {
+  margin-top: 12px;
+  padding-top: 9px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 7px;
+}
+
+.retention-ai-card > footer small {
+  color: rgba(255, 255, 255, 0.34);
+  text-align: right;
 }
 
 .format-subject-grid {
