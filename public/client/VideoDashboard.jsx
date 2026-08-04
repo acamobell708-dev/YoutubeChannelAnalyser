@@ -18,6 +18,10 @@ import {
   FormatRetentionChart,
   VideoTypeControl,
 } from "./videoFormatDashboard.jsx";
+import {
+  DevFixtureControl,
+  SyntheticFixtureBanner,
+} from "./devFixtureControl.jsx";
 
 const feedbackLabels = {
   praise: "Praise",
@@ -951,6 +955,7 @@ function ResultStage({ analysis }) {
 
   return (
     <section className="result-stage">
+      <SyntheticFixtureBanner fixture={analysis.fixture} />
       <article className="video-card">
         <div className="thumbnail-frame">
           {video.thumbnailUrl ? (
@@ -1023,12 +1028,15 @@ function App() {
   const [maxComments, setMaxComments] = useState(100);
   const [analysisMode, setAnalysisMode] = useState("economy");
   const [videoType, setVideoType] = useState("auto");
+  const [dataSource, setDataSource] = useState("real");
   const [configuration, setConfiguration] = useState(null);
   const [ownerAuth, setOwnerAuth] = useState(null);
   const [dailyUsage, setDailyUsage] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const usingFixture = dataSource === "synthetic-short";
+  const devFixturesEnabled = configuration?.devFixturesEnabled === true;
 
   useEffect(() => {
     let active = true;
@@ -1067,6 +1075,15 @@ function App() {
     }));
   }
 
+  function changeDataSource(nextSource) {
+    setDataSource(nextSource);
+    setAnalysis(null);
+    setError("");
+    if (nextSource === "synthetic-short") {
+      setVideoType("short");
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     setError("");
@@ -1074,16 +1091,23 @@ function App() {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/video-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url: url.trim(),
-          maxComments: Number(maxComments),
-          analysisMode,
-          videoType,
-        }),
-      });
+      const response = await fetch(
+        usingFixture
+          ? "/api/dev-fixtures/synthetic-short"
+          : "/api/video-analysis",
+        usingFixture
+          ? { method: "POST" }
+          : {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: url.trim(),
+                maxComments: Number(maxComments),
+                analysisMode,
+                videoType,
+              }),
+            },
+      );
       const payload = await response.json();
 
       if (!response.ok) {
@@ -1093,10 +1117,12 @@ function App() {
       }
 
       setAnalysis(payload.analysis);
-      const usageResponse = await fetch("/api/daily-token-usage");
-      if (usageResponse.ok) {
-        const usagePayload = await usageResponse.json();
-        setDailyUsage(usagePayload.usage);
+      if (!usingFixture) {
+        const usageResponse = await fetch("/api/daily-token-usage");
+        if (usageResponse.ok) {
+          const usagePayload = await usageResponse.json();
+          setDailyUsage(usagePayload.usage);
+        }
       }
     } catch (submitError) {
       setError(submitError.message);
@@ -1124,8 +1150,19 @@ function App() {
             </p>
           </div>
 
-          <form className="analysis-form" onSubmit={submit}>
-            <label htmlFor="video-url">YouTube video URL</label>
+          <form
+            className={`analysis-form ${usingFixture ? "fixture-mode" : ""}`}
+            onSubmit={submit}
+          >
+            <DevFixtureControl
+              enabled={devFixturesEnabled}
+              value={dataSource}
+              onChange={changeDataSource}
+              disabled={loading}
+            />
+            <label htmlFor="video-url">
+              {usingFixture ? "YouTube video URL (not used by fixture)" : "YouTube video URL"}
+            </label>
             <div className="url-control">
               <span aria-hidden="true">▶</span>
               <input
@@ -1133,22 +1170,33 @@ function App() {
                 type="url"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://www.youtube.com/watch?v=…"
+                placeholder={usingFixture ? "Synthetic fixture supplies its own Short" : "https://www.youtube.com/watch?v=…"}
                 autoComplete="url"
-                required
+                required={!usingFixture}
+                disabled={loading || usingFixture}
               />
             </div>
-            <OwnerAuthControl
-              ownerAuth={ownerAuth}
-              returnTo="/VideoDashboard.html"
-              onDisconnect={logoutOwner}
-              title="Creator-only transcript and retention analysis"
-              description="Google access lets us analyse captions and measured retention for videos you own, including Hook, Clarity, Structure, and Pacing context."
-            />
+            {usingFixture ? (
+              <div className="dev-fixture-bypass">
+                <strong>Owner access is simulated</strong>
+                <span>
+                  Captions, engaged views, retention, discovery and AI
+                  explanations come from static fixture data.
+                </span>
+              </div>
+            ) : (
+              <OwnerAuthControl
+                ownerAuth={ownerAuth}
+                returnTo="/VideoDashboard.html"
+                onDisconnect={logoutOwner}
+                title="Creator-only transcript and retention analysis"
+                description="Google access lets us analyse captions and measured retention for videos you own, including Hook, Clarity, Structure, and Pacing context."
+              />
+            )}
             <VideoTypeControl
-              value={videoType}
+              value={usingFixture ? "short" : videoType}
               onChange={setVideoType}
-              disabled={loading}
+              disabled={loading || usingFixture}
             />
             <div className="form-footer">
               <label className="comment-limit">
@@ -1160,17 +1208,36 @@ function App() {
                   value={maxComments}
                   onChange={(event) => setMaxComments(event.target.value)}
                   aria-describedby="comment-help"
+                  disabled={loading || usingFixture}
                 />
               </label>
-              <button type="submit" disabled={loading || dailyUsage?.locked}>
-                {loading ? "Analysing…" : dailyUsage?.locked ? "Daily limit reached" : "Analyse video"}
+              <button
+                type="submit"
+                disabled={
+                  loading || (!usingFixture && dailyUsage?.locked)
+                }
+              >
+                {loading
+                  ? usingFixture
+                    ? "Loading fixture…"
+                    : "Analysing…"
+                  : usingFixture
+                    ? "Load synthetic Short"
+                    : dailyUsage?.locked
+                      ? "Daily limit reached"
+                      : "Analyse video"}
                 <span aria-hidden="true">→</span>
               </button>
             </div>
             <small id="comment-help">
-              Stratified top, recent, and highly liked threads; maximum 500.
+              {usingFixture
+                ? "Fixture includes 24 synthetic analysed comment threads."
+                : "Stratified top, recent, and highly liked threads; maximum 500."}
             </small>
-            <fieldset className="analysis-mode" disabled={loading}>
+            <fieldset
+              className="analysis-mode"
+              disabled={loading || usingFixture}
+            >
               <legend>Analysis depth</legend>
               <label className={analysisMode === "economy" ? "selected" : ""}>
                 <input
@@ -1194,11 +1261,17 @@ function App() {
               </label>
             </fieldset>
             <span className="form-budget-note">
-              {analysisMode === "heavy" ? "Heavy Analysis" : "Economy mode"}
-              {" · one GPT request · "}
-              {analysisMode === "heavy" ? "10,000" : "6,500"}-token ceiling
+              {usingFixture ? (
+                "Synthetic fixture · zero external requests · zero tokens"
+              ) : (
+                <>
+                  {analysisMode === "heavy" ? "Heavy Analysis" : "Economy mode"}
+                  {" · one GPT request · "}
+                  {analysisMode === "heavy" ? "10,000" : "6,500"}-token ceiling
+                </>
+              )}
             </span>
-            <DailyUsageNotice usage={dailyUsage} />
+            {!usingFixture ? <DailyUsageNotice usage={dailyUsage} /> : null}
           </form>
         </section>
 

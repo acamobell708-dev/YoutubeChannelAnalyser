@@ -29,6 +29,12 @@ function isConfigured(value) {
   return !PLACEHOLDERS.has(value.toLowerCase());
 }
 
+function enabledFlag(value) {
+  return new Set(["1", "true", "yes", "on"]).has(
+    String(value ?? "").trim().toLowerCase(),
+  );
+}
+
 export function loadConfig(environment = process.env) {
   const youtubeApiKey = (environment.YOUTUBE_API_KEY ?? "").trim();
   const openaiApiKey = (environment.OPENAI_API_KEY ?? "").trim();
@@ -47,6 +53,12 @@ export function loadConfig(environment = process.env) {
     environment.OPENAI_CHANNEL_MODEL ?? "gpt-5.4"
   ).trim();
   const parsedPort = Number.parseInt(environment.PORT ?? "3000", 10);
+  const nodeEnvironment = String(environment.NODE_ENV ?? "")
+    .trim()
+    .toLowerCase();
+  const devFixturesEnabled =
+    nodeEnvironment === "development" &&
+    enabledFlag(environment.ENABLE_DEV_FIXTURES);
 
   const port =
     Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 3000;
@@ -65,6 +77,7 @@ export function loadConfig(environment = process.env) {
     openaiVideoModel: openaiVideoModel || "gpt-5.4",
     openaiChannelModel: openaiChannelModel || "gpt-5.4",
     port,
+    devFixturesEnabled,
     hasYouTubeApiKey: isConfigured(youtubeApiKey),
     hasOpenAIApiKey: isConfigured(openaiApiKey),
     hasOpenAIAdminKey: isConfigured(openaiAdminKey),
@@ -98,6 +111,7 @@ export function configurationStatus(config) {
     openaiConfigured: config.hasOpenAIApiKey,
     openaiUsageApiConfigured: config.hasOpenAIAdminKey,
     googleOAuthConfigured: config.hasGoogleOAuth,
+    devFixturesEnabled: config.devFixturesEnabled === true,
     model: config.openaiVideoModel,
     channelModel: config.openaiChannelModel,
   };

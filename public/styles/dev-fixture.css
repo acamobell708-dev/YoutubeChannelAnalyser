@@ -1,0 +1,175 @@
+.dev-fixture-control {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid rgba(255, 150, 63, 0.35);
+  border-radius: 14px;
+  background: rgba(255, 150, 63, 0.06);
+}
+
+.dev-fixture-control legend {
+  padding: 0 5px;
+  color: #9b551f;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dev-source-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.dev-source-switch label {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid rgba(23, 23, 21, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.58);
+  cursor: pointer;
+}
+
+.dev-source-switch label.selected {
+  border-color: #171715;
+  background: #171715;
+}
+
+.dev-source-switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dev-source-switch b,
+.dev-source-switch small {
+  display: block;
+}
+
+.dev-source-switch b {
+  color: #171715;
+  font-size: 10px;
+}
+
+.dev-source-switch small {
+  margin-top: 3px;
+  color: #706e67;
+  font-size: 8px;
+  line-height: 1.35;
+}
+
+.dev-source-switch label.selected b {
+  color: white;
+}
+
+.dev-source-switch label.selected small {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.dev-source-switch label:focus-within {
+  outline: 2px solid #ff963f;
+  outline-offset: 2px;
+}
+
+.dev-fixture-control > p {
+  margin: 8px 2px 0;
+  color: #76513a;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.dev-fixture-bypass {
+  margin: 10px 0;
+  padding: 11px 13px;
+  border-left: 3px solid #ff963f;
+  background: rgba(255, 150, 63, 0.08);
+}
+
+.dev-fixture-bypass strong,
+.dev-fixture-bypass span {
+  display: block;
+}
+
+.dev-fixture-bypass strong {
+  color: #5c3216;
+  font-size: 10px;
+}
+
+.dev-fixture-bypass span {
+  margin-top: 3px;
+  color: #76513a;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.analysis-form.fixture-mode .url-control,
+.analysis-form.fixture-mode .comment-limit,
+.analysis-form.fixture-mode .analysis-mode,
+.analysis-form.fixture-mode .video-type-control {
+  opacity: 0.58;
+}
+
+.analysis-form.fixture-mode .url-control input {
+  cursor: not-allowed;
+}
+
+.synthetic-fixture-banner {
+  padding: 16px 18px;
+  display: grid;
+  grid-template-columns: minmax(220px, 0.7fr) minmax(280px, 1.3fr);
+  align-items: center;
+  gap: 12px 24px;
+  border: 1px solid rgba(255, 150, 63, 0.4);
+  border-radius: 16px;
+  background:
+    linear-gradient(120deg, rgba(255, 150, 63, 0.15), transparent 55%),
+    #2c241e;
+  color: white;
+}
+
+.synthetic-fixture-banner span,
+.synthetic-fixture-banner strong,
+.synthetic-fixture-banner small {
+  display: block;
+}
+
+.synthetic-fixture-banner span {
+  color: #ffb36b;
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.synthetic-fixture-banner strong {
+  margin-top: 4px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.synthetic-fixture-banner p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.synthetic-fixture-banner small {
+  grid-column: 1 / -1;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 8px;
+}
+
+@media (max-width: 650px) {
+  .dev-source-switch,
+  .synthetic-fixture-banner {
+    grid-template-columns: 1fr;
+  }
+
+  .synthetic-fixture-banner small {
+    grid-column: 1;
+  }
+}

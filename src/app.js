@@ -11,6 +11,7 @@ import {
 import { toPublicError } from "./errors.js";
 import { ownerSessionId } from "./auth/sessionCookies.js";
 import { registerGoogleAuthRoutes } from "./routes/googleAuthRoutes.js";
+import { createSyntheticShortAnalysis } from "./fixtures/syntheticShortAnalysis.js";
 
 function registerAnalysisRoute(app, { path, config, analyse, requestData }) {
   app.post(path, async (request, response) => {
@@ -76,6 +77,14 @@ export function createApp({
         : null,
     });
   });
+
+  if (config.devFixturesEnabled) {
+    app.post("/api/dev-fixtures/synthetic-short", (_request, response) => {
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("X-Dev-Fixture", "synthetic-short");
+      response.json({ analysis: createSyntheticShortAnalysis() });
+    });
+  }
 
   registerGoogleAuthRoutes(app, { config, googleOAuthService });
 
