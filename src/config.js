@@ -53,12 +53,9 @@ export function loadConfig(environment = process.env) {
     environment.OPENAI_CHANNEL_MODEL ?? "gpt-5.4"
   ).trim();
   const parsedPort = Number.parseInt(environment.PORT ?? "3000", 10);
-  const nodeEnvironment = String(environment.NODE_ENV ?? "")
-    .trim()
-    .toLowerCase();
-  const devFixturesEnabled =
-    nodeEnvironment === "development" &&
-    enabledFlag(environment.ENABLE_DEV_FIXTURES);
+  const devFixturesEnabled = enabledFlag(
+    environment.ENABLE_DEV_FIXTURES,
+  );
 
   const port =
     Number.isInteger(parsedPort) && parsedPort > 0 ? parsedPort : 3000;

@@ -43,6 +43,9 @@ param openaiVideoModel string = 'gpt-5.4'
 @description('Optional OpenAI channel-analysis model override.')
 param openaiChannelModel string = 'gpt-5.4'
 
+@description('Expose the static Synthetic Short test controls and route.')
+param enableDevFixtures bool = true
+
 resource app 'Microsoft.App/containerApps@2025-07-01' = {
   name: containerAppName
   location: location
@@ -97,6 +100,10 @@ resource app 'Microsoft.App/containerApps@2025-07-01' = {
             {
               name: 'PORT'
               value: '3000'
+            }
+            {
+              name: 'ENABLE_DEV_FIXTURES'
+              value: enableDevFixtures ? 'true' : 'false'
             }
             {
               name: 'YOUTUBE_API_KEY'

@@ -73,7 +73,18 @@ test("video dashboard and generated assets are always revalidated", async () => 
   const page = await request(app).get("/VideoDashboard.html").expect(200);
   assert.match(page.headers["cache-control"], /no-store/);
   assert.equal(page.headers.pragma, "no-cache");
-  assert.match(page.text,  /video-ui-20260804/);
+  assert.match(
+    page.text,
+    /\/styles\/dashboard\.css\?v=[a-zA-Z0-9-]+/,
+  );
+  assert.match(
+    page.text,
+    /\/styles\/dev-fixture\.css\?v=[a-zA-Z0-9-]+/,
+  );
+  assert.match(
+    page.text,
+    /\/assets\/VideoDashboard\.js\?v=[a-zA-Z0-9-]+/,
+  );
 
   const asset = await request(app)
     .get("/assets/VideoDashboard.js")

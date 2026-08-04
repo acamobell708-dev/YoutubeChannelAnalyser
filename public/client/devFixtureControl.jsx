@@ -30,12 +30,14 @@ export function DevFixtureControl({ enabled, value, onChange, disabled = false }
           />
           <span>
             <b>Synthetic Short</b>
-            <small>Static owner metrics, retention and AI explanations</small>
+            <small>
+              Static owner metrics, tags, timestamps, retention and AI explanations
+            </small>
           </span>
         </label>
       </div>
       <p>
-        Development only. The synthetic option makes no YouTube, Google,
+        Explicit test mode. The synthetic option makes no YouTube, Google,
         OpenAI, OAuth, quota or token request.
       </p>
     </fieldset>

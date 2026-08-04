@@ -11,6 +11,7 @@ RUN npm run build && npm prune --omit=dev
 FROM node:20-bookworm-slim AS runtime
 
 ENV NODE_ENV=production
+ENV ENABLE_DEV_FIXTURES=true
 ENV PORT=3000
 
 WORKDIR /app

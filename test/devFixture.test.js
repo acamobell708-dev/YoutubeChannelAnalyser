@@ -33,7 +33,7 @@ function createTestApp(devFixturesEnabled) {
   });
 }
 
-test("development fixture requires both the development environment and flag", () => {
+test("synthetic fixture is controlled by its explicit flag in every environment", () => {
   assert.equal(
     loadConfig({
       NODE_ENV: "development",
@@ -46,12 +46,25 @@ test("development fixture requires both the development environment and flag", (
       NODE_ENV: "production",
       ENABLE_DEV_FIXTURES: "true",
     }).devFixturesEnabled,
-    false,
+    true,
   );
   assert.equal(
     loadConfig({
       NODE_ENV: "development",
       ENABLE_DEV_FIXTURES: "false",
+    }).devFixturesEnabled,
+    false,
+  );
+  assert.equal(
+    loadConfig({
+      NODE_ENV: "production",
+      ENABLE_DEV_FIXTURES: "false",
+    }).devFixturesEnabled,
+    false,
+  );
+  assert.equal(
+    loadConfig({
+      NODE_ENV: "development",
     }).devFixturesEnabled,
     false,
   );
@@ -66,6 +79,18 @@ test("synthetic Short fixture passes the normal result sanity checks", () => {
   assert.ok(analysis.retention.overview.averageViewPercentage > 100);
   assert.equal(analysis.retention.momentExplanations.length, 3);
   assert.equal(analysis.discovery.rows[0].label, "Shorts Feed");
+  assert.equal(
+    analysis.discovery.rows.some((row) => row.id === "sound_pages"),
+    true,
+  );
+  assert.match(
+    analysis.insights.nextVideo.optimisation.tags,
+    /result reveal/i,
+  );
+  assert.equal(
+    analysis.phaseTwo.timeline.every((point) => Number.isFinite(point.atSeconds)),
+    true,
+  );
   assert.equal(analysis.sanity.passed, true);
 });
 

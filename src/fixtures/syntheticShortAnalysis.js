@@ -301,7 +301,7 @@ export function createSyntheticShortAnalysis() {
           title: "Use a specific outcome rather than a broad topic.",
           thumbnail: "Use the clearest result frame for non-feed discovery.",
           description: "State the result and one relevant search phrase first.",
-          tags: "Keep only exact topic and format variants.",
+          tags: "Use focused variants such as result reveal, 18-second tutorial, before and after, and looped Short. Avoid generic tags such as viral or trending.",
           captions: "Limit each caption to one short readable phrase.",
         },
         nextAction: "Compare a two-second payoff version against the current three-second opening.",
