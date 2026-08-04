@@ -90,6 +90,7 @@ export class ChannelPerformanceAnalyst {
     mode = "economy",
     videoType = "all",
     analysisScope = null,
+    engagedViewsSummary = null,
   }) {
     const profile = getAnalysisProfile(mode);
     const allowedDirectionFormats =
@@ -98,11 +99,15 @@ export class ChannelPerformanceAnalyst {
         : videoType === "standard"
           ? ["over_3_minutes"]
           : ["up_to_3_minutes", "over_3_minutes", "either"];
+    const engagedViewsInstruction =
+      engagedViewsSummary?.status === "available"
+        ? "Measured owner YouTube Analytics engaged views are supplied at aggregate Shorts-catalogue level. Discuss them explicitly, but never attribute the aggregate to a specific video."
+        : "Measured engaged views are unavailable. State this clearly and describe public views as a proxy, never as engaged views.";
     const lensInstruction =
       videoType === "short"
         ? [
             "The supplied uploads are already restricted to the Shorts-focused catalogue.",
-            "Treat public Shorts views as reported starts/replays, not engaged views.",
+            "Use engagedViewsSummary for measured channel-level engaged-view discussion. Continue to treat per-video public Shorts views as reported starts/replays, not engaged views.",
             "Do not infer stayed-to-watch, swipe-away, retention, completion, loops or replay counts from public metrics.",
             "Focus recommendations on first-frame clarity, immediate hook, payoff timing, readable captions and loop-ready endings as testable hypotheses.",
             "Every nextVideoDirection.format must be up_to_3_minutes.",
@@ -121,13 +126,14 @@ export class ChannelPerformanceAnalyst {
       "Do not recalculate metrics. Treat the supplied figures and percentiles as the measured evidence.",
       "Lifetime views are age-biased, so prefer views per day and fair duration-and-age cohort percentiles when comparing videos.",
       "Uploads up to three minutes are only a public duration group; do not claim that every one is a Short.",
-      "Do not claim access to impressions, click-through rate, audience demographics, current velocity, retention, watch time, or private YouTube Analytics.",
+      "Do not claim access to impressions, click-through rate, audience demographics, current velocity, retention, watch time, or any private metric beyond an explicitly available engagedViewsSummary.",
       "Return exactly three strengths, three weaknesses, and three preliminary next-video directions.",
       "Every strength, weakness, and direction must cite one to three videoId values from the supplied representative uploads.",
       "Distinguish measured associations from hypotheses, avoid causal claims, and state important sample limitations.",
       "Keep the output compact: findings and actions below 30 words, the assessment below 70 words, and each rationale below 40 words.",
       "Before returning, verify that every evidenceVideoId exactly matches a supplied videoId.",
       lensInstruction,
+      engagedViewsInstruction,
     ].join(" ");
 
     const selected = representativeVideos
@@ -147,6 +153,7 @@ export class ChannelPerformanceAnalyst {
             fetchedPublicVideoCount: channel.analysedVideoCount,
           },
           analysisScope,
+          engagedViewsSummary,
           deterministicSummary: channelMetrics.summary,
           durationCohorts: channelMetrics.durationCohorts,
           recentMomentum: channelMetrics.recentMomentum,

@@ -79,11 +79,27 @@ const youtubeClient = {
   },
 };
 
+const syntheticEngagedViews = {
+  status: "available",
+  source: "synthetic_fixture",
+  reason: null,
+  engagedViews: 205_400,
+  views: 261_300,
+  engagedViewSharePercent: 78.6,
+  periodStart: "2019-01-01",
+  periodEnd: "2026-08-04",
+};
+
+const channelEngagedViewsService = {
+  fetch: async () => syntheticEngagedViews,
+};
+
 const performanceAnalyst = {
   analyse: async ({
     representativeVideos,
     mode,
     analysisScope,
+    engagedViewsSummary,
   }) => {
     const ids = representativeVideos.map((video) => video.videoId);
     const evidence = (index) => [ids[index % ids.length]];
@@ -93,7 +109,7 @@ const performanceAnalyst = {
         summary: {
           headline: "Fast payoffs and loop-ready reveals lead this Shorts catalogue",
           assessment:
-            "The strongest public results cluster around immediate outcomes, concise captions and replayable reveals. Longer, denser Shorts are less consistent. These are public associations, not measured retention or swipe-away evidence.",
+            `The fixture records ${engagedViewsSummary.engagedViews.toLocaleString()} engaged views, ${engagedViewsSummary.engagedViewSharePercent}% of measured Shorts views. Immediate outcomes and replayable reveals also lead the public per-video proxy, but retention and swipe-away remain unavailable.`,
           confidence: "high",
         },
         strengths: [
@@ -140,7 +156,7 @@ const performanceAnalyst = {
           ),
         ],
         uncertainties: [
-          "Public channel data does not expose engaged views, stayed-to-watch, swipe-away, retention, watch time or replay counts.",
+          "The fixture supplies aggregate engaged views, but per-video engaged views, stayed-to-watch, swipe-away, retention, watch time and replay counts remain unavailable.",
           "The Shorts classification is exact in this fixture but normally uses a duration proxy when owner classification is unavailable.",
         ],
         nextVideoDirections: [
@@ -184,6 +200,7 @@ const performanceAnalyst = {
 const analyseSyntheticChannel = createChannelAnalyser({
   youtubeClient,
   performanceAnalyst,
+  channelEngagedViewsService,
   now: () => NOW,
 });
 
@@ -200,7 +217,7 @@ export async function createSyntheticChannelShortAnalysis() {
       id: "synthetic-channel-shorts-v1",
       label: "Synthetic Shorts channel",
       scenario:
-        "Eighteen Shorts with varied duration, age-normalised reach, public interaction density, outliers and evidence-linked recommendations.",
+        "Eighteen Shorts with aggregate engaged views, varied duration, age-normalised public reach, interaction density, outliers and evidence-linked recommendations.",
       description:
         "Static test data. No YouTube, Google, OpenAI, OAuth, quota or token request was made.",
     },

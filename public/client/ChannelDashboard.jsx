@@ -196,6 +196,9 @@ function PerformanceOverview({ analysis }) {
   const momentumWindowDays = momentum.windowDays ?? 20;
   const scope = analysis.analysisScope;
   const short = scope?.resolved === "short";
+  const engagedViews = analysis.engagedViews;
+  const engagedViewsAvailable =
+    short && engagedViews?.status === "available";
   return (
     <article className="channel-health-card">
       <div className="section-heading">
@@ -203,7 +206,11 @@ function PerformanceOverview({ analysis }) {
           <p className="eyebrow">
             Deterministic / {scope?.label ?? "selected catalogue"}
           </p>
-          <h2>{short ? "Shorts performance summary" : "Channel health summary"}</h2>
+          <h2>
+            {short
+              ? "Shorts engaged-view performance summary"
+              : "Channel health summary"}
+          </h2>
         </div>
         <span className="sample-badge">No GPT calculation</span>
       </div>
@@ -211,8 +218,44 @@ function PerformanceOverview({ analysis }) {
         Hover or focus each statistic to see how it is calculated and what it means.
       </p>
       <div className="channel-health-grid">
+        {short ? (
+          <>
+            <ChannelMetric
+              label="Engaged views"
+              value={
+                engagedViewsAvailable
+                  ? formatNumber(engagedViews.engagedViews)
+                  : "Unavailable"
+              }
+              note={
+                engagedViewsAvailable
+                  ? "Measured owner YouTube Analytics"
+                  : "Connect the channel owner to retrieve this metric"
+              }
+              tooltip={
+                engagedViewsAvailable
+                  ? "YouTube defines engaged views as views that continued past the initial seconds. This is the measured aggregate for Shorts in the selected channel and date range."
+                  : engagedViews?.reason ?? "Owner YouTube Analytics is required for measured Shorts engaged views."
+              }
+            />
+            <ChannelMetric
+              label="Engaged-view share"
+              value={
+                engagedViewsAvailable
+                  ? formatDecimal(engagedViews.engagedViewSharePercent, "%")
+                  : "Unavailable"
+              }
+              note={
+                engagedViewsAvailable
+                  ? `${formatNumber(engagedViews.engagedViews)} engaged of ${formatNumber(engagedViews.views)} Shorts views`
+                  : "Public view count is not a substitute"
+              }
+              tooltip="Measured engaged views divided by measured Shorts views for the same owner Analytics period. It indicates how many reported Shorts views continued past the initial seconds; it is not completion rate or retention."
+            />
+          </>
+        ) : null}
         <ChannelMetric
-          label="Median views/day"
+          label={short ? "Median public views/day (proxy)" : "Median views/day"}
           value={formatDecimal(performance.medianViewsPerDay)}
           note="Age-normalised lifetime average"
           tooltip="For each upload, lifetime public views are divided by its age in days, using a minimum age of one day. This card shows the catalogue median. Higher means stronger age-normalised reach, not current viewing velocity."
@@ -230,7 +273,7 @@ function PerformanceOverview({ analysis }) {
             : "For each upload: public likes plus public comments, divided by public views, multiplied by 100. This card shows the selected catalogue median. It measures public interaction density, not watch time or retention."}
         />
         <ChannelMetric
-          label="Top-five view share"
+          label={short ? "Top-five public-view share (proxy)" : "Top-five view share"}
           value={formatDecimal(performance.topFiveViewSharePercent, "%")}
           note={humanise(performance.classification)}
           tooltip="The five highest lifetime view counts are added together and divided by total catalogue views. A high share means the channel relies more on a few hits. Hit-driven means at least 80% top-five share or a views/day coefficient of variation of at least 1.5; distributed means no more than 55% share and a coefficient below 1. Fewer than 10 uploads is an insufficient sample."
@@ -246,26 +289,24 @@ function PerformanceOverview({ analysis }) {
         <ChannelMetric
           label="Above channel median"
           value={formatDecimal(performance.aboveMedianViewsPerDayPercent, "%")}
-          note={`${formatNumber(performance.aboveMedianViewsPerDayCount)} uploads by views/day`}
+          note={`${formatNumber(performance.aboveMedianViewsPerDayCount)} uploads by ${short ? "public views/day" : "views/day"}`}
           tooltip="The percentage of analysed uploads whose lifetime-average views/day is strictly higher than the catalogue median. A result near 50% is normal; ties at the median can make it lower."
         />
         <ChannelMetric
           label="Recent momentum"
           value={humanise(momentum.classification)}
           note={Number.isFinite(momentum.medianViewsPerDayChangePercent)
-            ? `${momentum.medianViewsPerDayChangePercent}% median views/day change across matched ${momentumWindowDays}-day windows`
+            ? `${momentum.medianViewsPerDayChangePercent}% median ${short ? "public views/day" : "views/day"} change across matched ${momentumWindowDays}-day windows`
             : `At least two uploads in each ${momentumWindowDays}-day window required`}
           tooltip={`Compares the median lifetime-average views/day of uploads published in the most recent ${momentumWindowDays} days with uploads published in the preceding ${momentumWindowDays} days. Improving is at least 20% higher, declining is at least 20% lower, and otherwise it is steady. Each window requires at least two uploads.`}
         />
       </div>
       <p className="analysis-caveat">
-        {scope?.caveat ?? (
-          <>
-            Views/day is a lifetime average since publication, not live
-            velocity. Exact Shorts classification and measured retention
-            require owner YouTube Analytics.
-          </>
-        )}
+        {short
+          ? engagedViewsAvailable
+            ? "Engaged views above are measured aggregate owner Analytics. Per-video rankings, duration cohorts, outliers and momentum still use public views as a clearly labelled proxy because this channel query does not expose per-video engaged-view history."
+            : `Engaged views are unavailable: ${engagedViews?.reason ?? "owner YouTube Analytics was not connected"}. Per-video Shorts comparisons therefore use public views as a proxy and must not be interpreted as engaged views.`
+          : scope?.caveat}
       </p>
     </article>
   );
@@ -279,7 +320,7 @@ function DurationCohorts({ cohorts, scope }) {
           <p className="eyebrow">{scope?.label ?? "Format-relative comparison"}</p>
           <h2>
             {scope?.resolved === "short"
-              ? "Shorts performance by duration"
+              ? "Shorts public-view proxy by duration"
               : scope?.resolved === "standard"
                 ? "Long-form performance by duration"
                 : "Performance by duration"}
@@ -291,10 +332,12 @@ function DurationCohorts({ cohorts, scope }) {
           <section key={cohort.id}>
             <span>{humanise(cohort.id)}</span>
             <strong>{formatDecimal(cohort.medianViewsPerDay)}</strong>
-            <small>median views/day</small>
+            <small>
+              median {scope?.resolved === "short" ? "public views/day" : "views/day"}
+            </small>
             <dl>
               <div><dt>Uploads</dt><dd>{formatNumber(cohort.videoCount)}</dd></div>
-              <div><dt>View share</dt><dd>{formatDecimal(cohort.shareOfViewsPercent, "%")}</dd></div>
+              <div><dt>{scope?.resolved === "short" ? "Public-view share" : "View share"}</dt><dd>{formatDecimal(cohort.shareOfViewsPercent, "%")}</dd></div>
               <div><dt>Engagement</dt><dd>{formatDecimal(cohort.medianEngagementPer100Views, "%")}</dd></div>
             </dl>
           </section>
@@ -554,6 +597,7 @@ function CatalogueTable({ videos, scope }) {
 }
 
 function ResultStage({ analysis }) {
+  const short = analysis.analysisScope?.resolved === "short";
   return (
     <section className="result-stage channel-result">
       <SyntheticFixtureBanner fixture={analysis.fixture} />
@@ -574,7 +618,7 @@ function ResultStage({ analysis }) {
         </div>
         <div className="channel-metric-grid">
           <ChannelMetric label="Subscribers" value={formatNumber(analysis.channel.subscriberCount)} />
-          <ChannelMetric label="Channel views" value={formatNumber(analysis.channel.totalViewCount)} />
+          <ChannelMetric label="Public channel views" value={formatNumber(analysis.channel.totalViewCount)} />
           <ChannelMetric label="Public videos" value={formatNumber(analysis.channel.videoCount)} />
           <ChannelMetric label="Selected uploads" value={formatNumber(analysis.channel.analysedVideoCount)} />
         </div>
@@ -609,8 +653,12 @@ function ResultStage({ analysis }) {
 
       <div className="ranking-grid">
         <RankingTable
-          title="Most viewed"
-          description="Lifetime totals for reference; views/day is shown beside them to reveal age bias."
+          title={short ? "Most public views (proxy)" : "Most viewed"}
+          description={
+            short
+              ? "Per-video engaged views are not available in this aggregate channel report, so this ranking uses public lifetime views and public views/day as a proxy."
+              : "Lifetime totals for reference; views/day is shown beside them to reveal age bias."
+          }
           videos={analysis.topByViews}
           emphasis="Top 10 / lifetime reach"
         />
@@ -724,13 +772,14 @@ function App() {
       <main>
         <section className="hero channel-hero">
           <div className="hero-copy">
-            <p className="eyebrow">Channel intelligence / public data</p>
+            <p className="eyebrow">Channel intelligence / public + owner Analytics</p>
             <h1>Read the catalogue.<br /><em>Plan the next win.</em></h1>
             <p>
               Choose Shorts, long-form, or the complete public catalogue;
               compare the selected uploads using age- and duration-aware
-              metrics, then turn the strongest evidence into format-specific
-              next-video directions.
+              metrics. When the owner is connected, the Shorts summary also
+              includes measured engaged views from YouTube Analytics before
+              producing format-specific next-video directions.
             </p>
           </div>
 
@@ -780,7 +829,7 @@ function App() {
                 returnTo="/ChannelDashbaord.html"
                 onDisconnect={logoutOwner}
                 title="Creator connection"
-                description="The reusable owner sign-in is ready for Phase 2 Analytics. The current channel calculations use public data only."
+                description="Connect the channel owner to add measured aggregate Shorts engaged views. Public per-video metrics remain available when owner Analytics is unavailable."
               />
             )}
             <ChannelVideoTypeControl

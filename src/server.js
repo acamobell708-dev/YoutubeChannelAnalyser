@@ -3,6 +3,7 @@ import { createVideoAnalyser } from "./analysis/analyseVideo.js";
 import { createApp } from "./app.js";
 import { config } from "./config.js";
 import { ChannelPerformanceAnalyst } from "./services/channelPerformanceAnalyst.js";
+import { ChannelEngagedViewsAnalyticsService } from "./services/channelEngagedViewsAnalyticsService.js";
 import { DailyTokenQuota } from "./services/dailyTokenQuota.js";
 import { GoogleOAuthService } from "./services/googleOAuthService.js";
 import { OpenAIAnalysisClient } from "./services/openAIAnalysisClient.js";
@@ -48,6 +49,10 @@ const videoFormatAnalyticsService = new YouTubeVideoFormatAnalyticsService({
   ownerAccess: ownerYouTubeAccess,
   analyticsClient: youtubeAnalyticsClient,
 });
+const channelEngagedViewsService = new ChannelEngagedViewsAnalyticsService({
+  ownerAccess: ownerYouTubeAccess,
+  analyticsClient: youtubeAnalyticsClient,
+});
 const performanceAnalyst = new ChannelPerformanceAnalyst({
   model: config.openaiChannelModel,
   analysisClient: openAIAnalysisClient,
@@ -63,6 +68,7 @@ const analyseVideo = createVideoAnalyser({
 const analyseChannel = createChannelAnalyser({
   youtubeClient,
   performanceAnalyst,
+  channelEngagedViewsService,
 });
 const app = createApp({
   config,

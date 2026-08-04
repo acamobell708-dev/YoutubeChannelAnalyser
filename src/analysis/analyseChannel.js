@@ -50,15 +50,30 @@ function clientSafeList(videos) {
   return videos.map((video) => clientSafeVideo(video));
 }
 
+function unavailableEngagedViews(reason) {
+  return {
+    status: "unavailable",
+    source: null,
+    reason,
+    engagedViews: null,
+    views: null,
+    engagedViewSharePercent: null,
+    periodStart: null,
+    periodEnd: null,
+  };
+}
+
 export function createChannelAnalyser({
   youtubeClient,
   performanceAnalyst,
+  channelEngagedViewsService = null,
   now = Date.now,
 }) {
   return async function analyseChannel({
     url,
     analysisMode = "economy",
     videoType = "all",
+    ownerSessionId = null,
   }) {
     const profile = getAnalysisProfile(analysisMode);
     const channel = await youtubeClient.fetchChannel(url);
@@ -80,6 +95,27 @@ export function createChannelAnalyser({
       );
     }
 
+    const engagedViews =
+      selection.scope.resolved === "short"
+        ? channelEngagedViewsService
+          ? await channelEngagedViewsService.fetch({
+              channelId: channel.channelId,
+              ownerSessionId,
+            })
+          : unavailableEngagedViews(
+              "Owner YouTube Analytics is not configured for channel engaged-view retrieval.",
+            )
+        : {
+            status: "not_applicable",
+            source: null,
+            reason: "Engaged-view summary is only requested for the Shorts analysis lens.",
+            engagedViews: null,
+            views: null,
+            engagedViewSharePercent: null,
+            periodStart: null,
+            periodEnd: null,
+          };
+
     const channelMetrics = calculateChannelMetrics(
       selection.videos,
       now,
@@ -98,6 +134,7 @@ export function createChannelAnalyser({
       mode: analysisMode,
       videoType: selection.scope.resolved,
       analysisScope: selection.scope,
+      engagedViewsSummary: engagedViews,
     });
 
     const result = {
@@ -113,6 +150,7 @@ export function createChannelAnalyser({
         analysedVideoCount: selection.scope.includedVideoCount,
       },
       analysisScope: selection.scope,
+      engagedViews,
       performance: channelMetrics.summary,
       durationCohorts: channelMetrics.durationCohorts,
       recentMomentum: channelMetrics.recentMomentum,
