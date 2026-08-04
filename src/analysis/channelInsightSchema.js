@@ -124,7 +124,13 @@ function assertEvidence(items, allowedVideoIds, label) {
   }
 }
 
-export function validateChannelInsight(analysis, { allowedVideoIds }) {
+export function validateChannelInsight(
+  analysis,
+  {
+    allowedVideoIds,
+    allowedDirectionFormats = null,
+  },
+) {
   try {
     if (
       !nonEmpty(analysis?.summary?.headline) ||
@@ -149,6 +155,17 @@ export function validateChannelInsight(analysis, { allowedVideoIds }) {
       allowed,
       "A next-video direction",
     );
+    if (
+      Array.isArray(allowedDirectionFormats) &&
+      allowedDirectionFormats.length > 0 &&
+      analysis.nextVideoDirections.some(
+        (direction) => !allowedDirectionFormats.includes(direction.format),
+      )
+    ) {
+      throw new Error(
+        "A next-video direction does not match the selected channel lens.",
+      );
+    }
   } catch (error) {
     throw new AppError(
       "OpenAI returned channel findings that could not be tied to the supplied evidence.",

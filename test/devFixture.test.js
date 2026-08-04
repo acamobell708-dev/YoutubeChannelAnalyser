@@ -6,6 +6,7 @@ import request from "supertest";
 import { createApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { createSyntheticShortAnalysis } from "../src/fixtures/syntheticShortAnalysis.js";
+import { createSyntheticChannelShortAnalysis } from "../src/fixtures/syntheticChannelShortAnalysis.js";
 
 function appConfig(devFixturesEnabled) {
   return {
@@ -94,12 +95,36 @@ test("synthetic Short fixture passes the normal result sanity checks", () => {
   assert.equal(analysis.sanity.passed, true);
 });
 
+test("synthetic Shorts channel uses the focused channel-analysis pipeline", async () => {
+  const analysis = await createSyntheticChannelShortAnalysis();
+
+  assert.equal(analysis.fixture.synthetic, true);
+  assert.equal(analysis.analysisScope.resolved, "short");
+  assert.equal(analysis.catalogue.length, 18);
+  assert.ok(
+    analysis.catalogue.every((video) => video.videoType === "short"),
+  );
+  assert.ok(
+    analysis.performanceAnalysis.nextVideoDirections.every(
+      (direction) => direction.format === "up_to_3_minutes",
+    ),
+  );
+  assert.equal(analysis.tokenBudget.actualTotalTokens, 0);
+  assert.equal(analysis.sanity.passed, true);
+});
+
 test("synthetic Short route is absent when development fixtures are disabled", async () => {
   const response = await request(createTestApp(false))
     .post("/api/dev-fixtures/synthetic-short")
     .expect(404);
 
   assert.equal(response.body.error.code, "NOT_FOUND");
+
+  const channelResponse = await request(createTestApp(false))
+    .post("/api/dev-fixtures/synthetic-channel-short")
+    .expect(404);
+
+  assert.equal(channelResponse.body.error.code, "NOT_FOUND");
 });
 
 test("synthetic Short route works without API keys, OAuth or token quota", async () => {
@@ -113,4 +138,19 @@ test("synthetic Short route works without API keys, OAuth or token quota", async
   assert.equal(response.body.analysis.videoFormat.creatorContentType, "SHORTS");
   assert.equal(response.body.analysis.metrics.engagedViews, 1_500);
   assert.equal(response.body.analysis.retention.chart.replayDetected, true);
+});
+
+test("synthetic Shorts channel route works without API keys, OAuth or quota", async () => {
+  const response = await request(createTestApp(true))
+    .post("/api/dev-fixtures/synthetic-channel-short")
+    .expect(200);
+
+  assert.equal(
+    response.headers["x-dev-fixture"],
+    "synthetic-channel-short",
+  );
+  assert.match(response.headers["cache-control"], /no-store/);
+  assert.equal(response.body.analysis.analysisScope.resolved, "short");
+  assert.equal(response.body.analysis.catalogue.length, 18);
+  assert.equal(response.body.analysis.tokenBudget.actualTotalTokens, 0);
 });

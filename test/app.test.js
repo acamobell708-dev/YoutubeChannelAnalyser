@@ -136,9 +136,10 @@ test("channel analysis endpoint returns a mocked successful result", async () =>
     analyseVideo: async () => {
       throw new Error("not called");
     },
-    analyseChannel: async ({ url, analysisMode, ownerSessionId }) => {
+    analyseChannel: async ({ url, analysisMode, videoType, ownerSessionId }) => {
       assert.equal(url, "https://www.youtube.com/@example");
       assert.equal(analysisMode, "heavy");
+      assert.equal(videoType, "short");
       assert.equal(ownerSessionId, null);
       return expected;
     },
@@ -149,6 +150,7 @@ test("channel analysis endpoint returns a mocked successful result", async () =>
     .send({
       url: "https://www.youtube.com/@example",
       analysisMode: "heavy",
+      videoType: "short",
     })
     .expect(200);
 

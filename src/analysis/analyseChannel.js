@@ -3,6 +3,7 @@ import { calculateChannelMetrics } from "./channelMetrics.js";
 import { runChannelSanityChecks } from "./sanity.js";
 import { selectChannelEvidence } from "./selectChannelEvidence.js";
 import { getAnalysisProfile } from "./analysisProfiles.js";
+import { selectChannelVideos } from "./channelVideoType.js";
 
 function rankVideos(videos, primaryMetric) {
   return [...videos]
@@ -29,6 +30,8 @@ function clientSafeVideo(video, rank = null) {
     durationSeconds: video.durationSeconds,
     durationBucket: video.durationBucket,
     formatGroup: video.formatGroup,
+    videoType: video.videoType,
+    videoTypeSource: video.videoTypeSource,
     ageDays: video.ageDays,
     viewCount: video.viewCount,
     likeCount: video.likeCount,
@@ -55,6 +58,7 @@ export function createChannelAnalyser({
   return async function analyseChannel({
     url,
     analysisMode = "economy",
+    videoType = "all",
   }) {
     const profile = getAnalysisProfile(analysisMode);
     const channel = await youtubeClient.fetchChannel(url);
@@ -65,7 +69,22 @@ export function createChannelAnalyser({
       );
     }
 
-    const channelMetrics = calculateChannelMetrics(channel.videos, now);
+    const selection = selectChannelVideos(channel.videos, videoType);
+    if (selection.videos.length === 0) {
+      throw new AppError(
+        `No public uploads matched the ${selection.scope.label} analysis lens.`,
+        {
+          status: 404,
+          code: "CHANNEL_HAS_NO_MATCHING_VIDEO_TYPE",
+        },
+      );
+    }
+
+    const channelMetrics = calculateChannelMetrics(
+      selection.videos,
+      now,
+      { videoType: selection.scope.resolved },
+    );
     const topByViews = rankVideos(channelMetrics.videos, "viewCount");
     const topByComments = rankVideos(channelMetrics.videos, "commentCount");
     const representativeVideos = selectChannelEvidence(
@@ -77,6 +96,8 @@ export function createChannelAnalyser({
       channelMetrics,
       representativeVideos,
       mode: analysisMode,
+      videoType: selection.scope.resolved,
+      analysisScope: selection.scope,
     });
 
     const result = {
@@ -88,8 +109,10 @@ export function createChannelAnalyser({
         subscriberCount: channel.subscriberCount,
         totalViewCount: channel.totalViewCount,
         videoCount: channel.videoCount,
-        analysedVideoCount: channel.analysedVideoCount,
+        sourceAnalysedVideoCount: channel.analysedVideoCount,
+        analysedVideoCount: selection.scope.includedVideoCount,
       },
+      analysisScope: selection.scope,
       performance: channelMetrics.summary,
       durationCohorts: channelMetrics.durationCohorts,
       recentMomentum: channelMetrics.recentMomentum,

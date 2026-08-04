@@ -12,6 +12,7 @@ import { toPublicError } from "./errors.js";
 import { ownerSessionId } from "./auth/sessionCookies.js";
 import { registerGoogleAuthRoutes } from "./routes/googleAuthRoutes.js";
 import { createSyntheticShortAnalysis } from "./fixtures/syntheticShortAnalysis.js";
+import { createSyntheticChannelShortAnalysis } from "./fixtures/syntheticChannelShortAnalysis.js";
 
 function registerAnalysisRoute(app, { path, config, analyse, requestData }) {
   app.post(path, async (request, response) => {
@@ -84,6 +85,16 @@ export function createApp({
       response.setHeader("X-Dev-Fixture", "synthetic-short");
       response.json({ analysis: createSyntheticShortAnalysis() });
     });
+    app.post(
+      "/api/dev-fixtures/synthetic-channel-short",
+      async (_request, response) => {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("X-Dev-Fixture", "synthetic-channel-short");
+        response.json({
+          analysis: await createSyntheticChannelShortAnalysis(),
+        });
+      },
+    );
   }
 
   registerGoogleAuthRoutes(app, { config, googleOAuthService });
@@ -108,6 +119,7 @@ export function createApp({
     requestData: (request) => ({
       url: request.body?.url,
       analysisMode: request.body?.analysisMode ?? "economy",
+      videoType: request.body?.videoType ?? "all",
       ownerSessionId: ownerSessionId(request, config),
     }),
   });

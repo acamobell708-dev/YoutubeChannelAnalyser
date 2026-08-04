@@ -105,6 +105,7 @@
 .analysis-form.fixture-mode .url-control,
 .analysis-form.fixture-mode .comment-limit,
 .analysis-form.fixture-mode .analysis-mode,
+.analysis-form.fixture-mode .channel-video-type-control,
 .analysis-form.fixture-mode .video-type-control {
   opacity: 0.58;
 }

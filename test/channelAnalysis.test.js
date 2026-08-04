@@ -103,6 +103,8 @@ test("channel analyser returns deterministic whole-catalogue intelligence", asyn
   });
 
   assert.equal(result.catalogue.length, 12);
+  assert.equal(result.analysisScope.resolved, "all");
+  assert.equal(result.analysisScope.includedVideoCount, 12);
   assert.equal(result.topByViews.length, 10);
   assert.equal(result.topByViews[0].viewCount, 12_000);
   assert.equal(result.topByComments[0].commentCount, 120);
@@ -134,6 +136,72 @@ test("channel metrics distinguish age-normalised reach and fair cohorts", () => 
   assert.equal(newest.formatGroup, "up_to_3_minutes");
   assert.equal(oldest.formatGroup, "over_3_minutes");
   assert.ok(Number.isFinite(newest.cohortPercentiles.viewsPerDay));
+});
+
+test("channel analysis lens filters metrics, evidence and rankings upstream", async () => {
+  const videos = [
+    { ...makeVideo(1), durationSeconds: 15 },
+    { ...makeVideo(2), durationSeconds: 30 },
+    { ...makeVideo(3), durationSeconds: 60 },
+    { ...makeVideo(4), durationSeconds: 180 },
+    { ...makeVideo(5), durationSeconds: 240 },
+    { ...makeVideo(6), durationSeconds: 600 },
+    { ...makeVideo(7), durationSeconds: 900 },
+    { ...makeVideo(8), durationSeconds: 1_500 },
+  ];
+  const analystCalls = [];
+  const analyseChannel = createChannelAnalyser({
+    now: () => NOW,
+    youtubeClient: {
+      fetchChannel: async () => ({
+        sourceUrl: "https://www.youtube.com/@example",
+        channelId: CHANNEL_ID,
+        title: "Example channel",
+        thumbnailUrl: null,
+        subscriberCount: 500,
+        totalViewCount: 36_000,
+        videoCount: videos.length,
+        analysedVideoCount: videos.length,
+        videos,
+      }),
+    },
+    performanceAnalyst: {
+      analyse: async (input) => {
+        analystCalls.push(input);
+        return unavailablePerformanceResult(input.mode);
+      },
+    },
+  });
+
+  const shorts = await analyseChannel({
+    url: "https://www.youtube.com/@example",
+    videoType: "short",
+  });
+  const longForm = await analyseChannel({
+    url: "https://www.youtube.com/@example",
+    videoType: "standard",
+  });
+
+  assert.equal(shorts.analysisScope.resolved, "short");
+  assert.equal(shorts.catalogue.length, 4);
+  assert.ok(shorts.catalogue.every((video) => video.durationSeconds <= 180));
+  assert.ok(
+    shorts.durationCohorts.every((cohort) => /seconds/.test(cohort.id)),
+  );
+  assert.ok(
+    analystCalls[0].representativeVideos.every(
+      (video) => video.durationSeconds <= 180,
+    ),
+  );
+
+  assert.equal(longForm.analysisScope.resolved, "standard");
+  assert.equal(longForm.catalogue.length, 4);
+  assert.ok(longForm.catalogue.every((video) => video.durationSeconds > 180));
+  assert.ok(
+    analystCalls[1].representativeVideos.every(
+      (video) => video.durationSeconds > 180,
+    ),
+  );
 });
 
 test("recent momentum compares matched 20-day publication windows", () => {
@@ -209,6 +277,57 @@ test("ChannelPerformanceAnalyst uses strict structured output and evidence IDs",
   assert.match(request.instructions, /duration-and-age cohort/i);
   assert.match(request.input, /BEGIN UNTRUSTED CHANNEL EVIDENCE/);
   assert.equal(request.max_output_tokens, 2_800);
+});
+
+test("ChannelPerformanceAnalyst keeps Shorts recommendations inside the selected lens", async () => {
+  let request;
+  const videos = Array.from({ length: 8 }, (_, index) => ({
+    ...makeVideo(index + 1),
+    durationSeconds: 15 + index * 5,
+    videoType: "short",
+    videoTypeSource: "duration_proxy",
+  }));
+  const channelMetrics = calculateChannelMetrics(
+    videos,
+    () => NOW,
+    { videoType: "short" },
+  );
+  const representativeVideos = selectChannelEvidence(channelMetrics, 12);
+  const output = structuredInsight(
+    representativeVideos.map((video) => video.videoId),
+  );
+  output.nextVideoDirections = output.nextVideoDirections.map((direction) => ({
+    ...direction,
+    format: "up_to_3_minutes",
+  }));
+  const analyst = new ChannelPerformanceAnalyst({
+    apiKey: "test",
+    client: {
+      responses: {
+        create: async (payload) => {
+          request = payload;
+          return { output_text: JSON.stringify(output) };
+        },
+      },
+    },
+  });
+
+  const result = await analyst.analyse({
+    channel: { title: "Example", videoCount: 8, analysedVideoCount: 8 },
+    channelMetrics,
+    representativeVideos,
+    videoType: "short",
+    analysisScope: { resolved: "short", label: "Shorts-focused catalogue" },
+  });
+
+  assert.equal(result.insight.status, "available");
+  assert.ok(
+    result.insight.nextVideoDirections.every(
+      (direction) => direction.format === "up_to_3_minutes",
+    ),
+  );
+  assert.match(request.instructions, /reported starts\/replays/i);
+  assert.match(request.instructions, /first-frame clarity/i);
 });
 
 test("invalid AI evidence degrades without discarding channel metrics", async () => {

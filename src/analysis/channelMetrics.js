@@ -34,8 +34,44 @@ function publishedTimestamp(value) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
-function durationBucket(durationSeconds) {
+const DURATION_BUCKETS = {
+  all: [
+    "up_to_3_minutes",
+    "3_to_10_minutes",
+    "10_to_20_minutes",
+    "over_20_minutes",
+    "unknown_duration",
+  ],
+  short: [
+    "up_to_15_seconds",
+    "16_to_30_seconds",
+    "31_to_60_seconds",
+    "61_to_180_seconds",
+    "unknown_duration",
+  ],
+  standard: [
+    "up_to_10_minutes",
+    "10_to_20_minutes",
+    "20_to_60_minutes",
+    "over_60_minutes",
+    "unknown_duration",
+  ],
+};
+
+function durationBucket(durationSeconds, videoType = "all") {
   if (!Number.isFinite(durationSeconds)) return "unknown_duration";
+  if (videoType === "short") {
+    if (durationSeconds <= 15) return "up_to_15_seconds";
+    if (durationSeconds <= 30) return "16_to_30_seconds";
+    if (durationSeconds <= 60) return "31_to_60_seconds";
+    return "61_to_180_seconds";
+  }
+  if (videoType === "standard") {
+    if (durationSeconds <= 600) return "up_to_10_minutes";
+    if (durationSeconds <= 1_200) return "10_to_20_minutes";
+    if (durationSeconds <= 3_600) return "20_to_60_minutes";
+    return "over_60_minutes";
+  }
   if (durationSeconds <= 180) return "up_to_3_minutes";
   if (durationSeconds <= 600) return "3_to_10_minutes";
   if (durationSeconds <= 1_200) return "10_to_20_minutes";
@@ -100,14 +136,8 @@ function summariseVideos(videos) {
   };
 }
 
-function summariseDurationBuckets(videos) {
-  const buckets = [
-    "up_to_3_minutes",
-    "3_to_10_minutes",
-    "10_to_20_minutes",
-    "over_20_minutes",
-    "unknown_duration",
-  ];
+function summariseDurationBuckets(videos, videoType = "all") {
+  const buckets = DURATION_BUCKETS[videoType] ?? DURATION_BUCKETS.all;
   const allViews = videos.reduce((total, video) => total + video.viewCount, 0);
   return buckets
     .map((bucket) => {
@@ -299,7 +329,11 @@ function findOutliers(videos) {
   };
 }
 
-export function calculateChannelMetrics(videos, now = Date.now) {
+export function calculateChannelMetrics(
+  videos,
+  now = Date.now,
+  { videoType = "all" } = {},
+) {
   const nowTimestamp = typeof now === "function" ? now() : now;
   const baseVideos = videos.map((video) => {
     const timestamp = publishedTimestamp(video.publishedAt);
@@ -314,7 +348,7 @@ export function calculateChannelMetrics(videos, now = Date.now) {
     const engagementPer100Views = Number.isFinite(video.likeCount)
       ? ratePer100(video.likeCount + video.commentCount, video.viewCount)
       : null;
-    const bucket = durationBucket(video.durationSeconds);
+    const bucket = durationBucket(video.durationSeconds, videoType);
     const ageBucket = publicationAgeBucket(exactAgeDays);
     return {
       ...video,
@@ -329,13 +363,25 @@ export function calculateChannelMetrics(videos, now = Date.now) {
       engagementPer100Views,
       durationBucket: bucket,
       formatGroup:
-        bucket === "up_to_3_minutes"
+        videoType === "short"
           ? "up_to_3_minutes"
-          : bucket === "unknown_duration"
-            ? "unknown_duration"
-            : "over_3_minutes",
+          : videoType === "standard"
+            ? "over_3_minutes"
+            : bucket === "up_to_3_minutes"
+              ? "up_to_3_minutes"
+              : bucket === "unknown_duration"
+                ? "unknown_duration"
+                : "over_3_minutes",
+      videoType:
+        video.videoType ??
+        (!Number.isFinite(video.durationSeconds)
+          ? "unknown"
+          : video.durationSeconds <= 180
+            ? "short"
+            : "standard"),
+      videoTypeSource: video.videoTypeSource ?? "duration_proxy",
       publicationAgeBucket: ageBucket,
-      cohortKey: `${bucket}:${ageBucket}`,
+      cohortKey: `${videoType}:${bucket}:${ageBucket}`,
     };
   });
   const enrichedVideos = addPercentiles(
@@ -366,7 +412,7 @@ export function calculateChannelMetrics(videos, now = Date.now) {
       ...performanceConcentration(enrichedVideos),
       uploadCadence: uploadCadence(enrichedVideos),
     },
-    durationCohorts: summariseDurationBuckets(enrichedVideos),
+    durationCohorts: summariseDurationBuckets(enrichedVideos, videoType),
     recentMomentum: recentMomentum(enrichedVideos, nowTimestamp),
     outliers: findOutliers(enrichedVideos),
     videos: enrichedVideos.sort(

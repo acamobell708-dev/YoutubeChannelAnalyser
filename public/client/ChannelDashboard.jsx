@@ -12,6 +12,10 @@ import {
   OwnerAuthControl,
   SanityCard,
 } from "./sharedDashboard.jsx";
+import {
+  ChannelDevFixtureControl,
+  SyntheticFixtureBanner,
+} from "./devFixtureControl.jsx";
 
 function humanise(value) {
   return String(value ?? "Unknown")
@@ -30,6 +34,52 @@ function formatDuration(totalSeconds) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+const CHANNEL_VIDEO_TYPE_OPTIONS = [
+  {
+    id: "all",
+    label: "All uploads",
+    description: "Mixed-catalogue baseline",
+  },
+  {
+    id: "short",
+    label: "Shorts",
+    description: "Up to 3 minutes public proxy",
+  },
+  {
+    id: "standard",
+    label: "Long-form",
+    description: "Over 3 minutes public proxy",
+  },
+];
+
+function ChannelVideoTypeControl({ value, onChange, disabled = false }) {
+  return (
+    <fieldset className="channel-video-type-control" disabled={disabled}>
+      <legend>Channel analysis lens</legend>
+      <div className="channel-video-type-options">
+        {CHANNEL_VIDEO_TYPE_OPTIONS.map((option) => (
+          <label
+            key={option.id}
+            className={value === option.id ? "selected" : ""}
+          >
+            <input
+              type="radio"
+              name="channel-video-type"
+              value={option.id}
+              checked={value === option.id}
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <span>
+              <b>{option.label}</b>
+              <small>{option.description}</small>
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function EmptyStage() {
   return (
     <section className="empty-stage channel-empty">
@@ -39,12 +89,12 @@ function EmptyStage() {
         ))}
       </div>
       <div>
-        <p className="eyebrow">Whole-catalogue public intelligence</p>
+        <p className="eyebrow">Selected-catalogue public intelligence</p>
         <h2>Compare every upload on fairer terms.</h2>
         <p>
-          The dashboard scans the complete public catalogue, normalises reach
-          for upload age, compares like-duration and like-age cohorts, and uses
-          one bounded AI request to interpret selected evidence.
+          Choose all uploads, likely Shorts, or likely long-form videos. The
+          dashboard filters first, then normalises reach, builds fair cohorts,
+          detects outliers, and selects evidence for one bounded AI request.
         </p>
         <ul className="feature-list">
           <li>Views-per-day and engagement percentiles</li>
@@ -144,12 +194,16 @@ function PerformanceOverview({ analysis }) {
   const cadence = performance.uploadCadence;
   const momentum = analysis.recentMomentum;
   const momentumWindowDays = momentum.windowDays ?? 20;
+  const scope = analysis.analysisScope;
+  const short = scope?.resolved === "short";
   return (
     <article className="channel-health-card">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Deterministic / complete catalogue</p>
-          <h2>Channel health summary</h2>
+          <p className="eyebrow">
+            Deterministic / {scope?.label ?? "selected catalogue"}
+          </p>
+          <h2>{short ? "Shorts performance summary" : "Channel health summary"}</h2>
         </div>
         <span className="sample-badge">No GPT calculation</span>
       </div>
@@ -164,10 +218,16 @@ function PerformanceOverview({ analysis }) {
           tooltip="For each upload, lifetime public views are divided by its age in days, using a minimum age of one day. This card shows the catalogue median. Higher means stronger age-normalised reach, not current viewing velocity."
         />
         <ChannelMetric
-          label="Median engagement"
+          label={short ? "Median public interaction" : "Median engagement"}
           value={formatDecimal(performance.medianEngagementPer100Views, "%")}
-          note="Likes + comments per 100 views"
-          tooltip="For each upload: public likes plus public comments, divided by public views, multiplied by 100. This card shows the catalogue median. It measures public interaction density, not watch time or retention."
+          note={
+            short
+              ? "Likes + comments per 100 reported Shorts views"
+              : "Likes + comments per 100 views"
+          }
+          tooltip={short
+            ? "For each likely Short: public likes plus public comments are divided by reported public views and multiplied by 100. Reported Shorts views can include starts and replays, so this is not an engaged-view rate and does not measure retention."
+            : "For each upload: public likes plus public comments, divided by public views, multiplied by 100. This card shows the selected catalogue median. It measures public interaction density, not watch time or retention."}
         />
         <ChannelMetric
           label="Top-five view share"
@@ -199,21 +259,31 @@ function PerformanceOverview({ analysis }) {
         />
       </div>
       <p className="analysis-caveat">
-        Views/day is a lifetime average since publication, not live velocity.
-        Exact Shorts classification and measured retention require owner
-        YouTube Analytics in Phase 2.
+        {scope?.caveat ?? (
+          <>
+            Views/day is a lifetime average since publication, not live
+            velocity. Exact Shorts classification and measured retention
+            require owner YouTube Analytics.
+          </>
+        )}
       </p>
     </article>
   );
 }
 
-function DurationCohorts({ cohorts }) {
+function DurationCohorts({ cohorts, scope }) {
   return (
     <article className="cohort-card">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">Format-relative comparison</p>
-          <h2>Performance by duration</h2>
+          <p className="eyebrow">{scope?.label ?? "Format-relative comparison"}</p>
+          <h2>
+            {scope?.resolved === "short"
+              ? "Shorts performance by duration"
+              : scope?.resolved === "standard"
+                ? "Long-form performance by duration"
+                : "Performance by duration"}
+          </h2>
         </div>
       </div>
       <div className="cohort-grid">
@@ -340,6 +410,7 @@ function AiFindingList({ title, findings, catalogueById }) {
 
 function AiAnalysis({ analysis }) {
   const insight = analysis.performanceAnalysis;
+  const synthetic = analysis.fixture?.synthetic === true;
   const catalogueById = useMemo(
     () => new Map(analysis.catalogue.map((video) => [video.videoId, video])),
     [analysis.catalogue],
@@ -357,7 +428,11 @@ function AiAnalysis({ analysis }) {
     <article className="channel-ai-card">
       <div className="section-heading">
         <div>
-          <p className="eyebrow">GPT‑5.4 / supplied evidence only</p>
+          <p className="eyebrow">
+            {synthetic
+              ? "Synthetic / static evidence interpretation"
+              : "GPT‑5.4 / supplied evidence only"}
+          </p>
           <h2>{insight.summary.headline}</h2>
         </div>
         <span className="sample-badge">{humanise(insight.summary.confidence)} confidence</span>
@@ -397,7 +472,9 @@ function AiAnalysis({ analysis }) {
         <ul>{insight.uncertainties.map((item) => <li key={item}>{item}</li>)}</ul>
       </aside>
       <p className="analysis-caveat">
-        One {humanise(analysis.tokenBudget.mode)} request; {formatNumber(analysis.tokenBudget.actualTotalTokens)} actual tokens where reported, with a {formatNumber(analysis.tokenBudget.ceilingTokens)}-token ceiling.
+        {synthetic
+          ? "Static fixture interpretation; no GPT request or token allowance was used."
+          : `One ${humanise(analysis.tokenBudget.mode)} request; ${formatNumber(analysis.tokenBudget.actualTotalTokens)} actual tokens where reported, with a ${formatNumber(analysis.tokenBudget.ceilingTokens)}-token ceiling.`}
       </p>
     </article>
   );
@@ -411,34 +488,24 @@ const catalogueSorters = {
   fairCohort: (video) => video.cohortPercentiles.viewsPerDay ?? -1,
 };
 
-function CatalogueTable({ videos }) {
-  const [formatFilter, setFormatFilter] = useState("all");
+function CatalogueTable({ videos, scope }) {
   const [sortBy, setSortBy] = useState("publishedAt");
   const visible = useMemo(
-    () => videos
-      .filter((video) => formatFilter === "all" || video.formatGroup === formatFilter)
+    () => [...videos]
       .sort((left, right) =>
         catalogueSorters[sortBy](right) - catalogueSorters[sortBy](left) ||
         left.title.localeCompare(right.title),
       ),
-    [videos, formatFilter, sortBy],
+    [videos, sortBy],
   );
   return (
     <article className="catalogue-card">
       <div className="section-heading catalogue-heading">
         <div>
-          <p className="eyebrow">Sortable / whole catalogue</p>
-          <h2>Every analysed upload</h2>
+          <p className="eyebrow">Sortable / {scope?.label ?? "selected catalogue"}</p>
+          <h2>Every upload in this analysis</h2>
         </div>
         <div className="catalogue-controls">
-          <label>
-            Format
-            <select value={formatFilter} onChange={(event) => setFormatFilter(event.target.value)}>
-              <option value="all">All</option>
-              <option value="up_to_3_minutes">Up to 3 minutes</option>
-              <option value="over_3_minutes">Over 3 minutes</option>
-            </select>
-          </label>
           <label>
             Sort by
             <select value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
@@ -480,8 +547,7 @@ function CatalogueTable({ videos }) {
         </table>
       </div>
       <p className="analysis-caveat">
-        “Up to 3 minutes” is a duration proxy, not an assertion that YouTube
-        classified the upload as a Short.
+        {scope?.caveat}
       </p>
     </article>
   );
@@ -490,6 +556,7 @@ function CatalogueTable({ videos }) {
 function ResultStage({ analysis }) {
   return (
     <section className="result-stage channel-result">
+      <SyntheticFixtureBanner fixture={analysis.fixture} />
       <article className="channel-overview-card">
         <div className="channel-identity">
           {analysis.channel.thumbnailUrl ? (
@@ -509,12 +576,34 @@ function ResultStage({ analysis }) {
           <ChannelMetric label="Subscribers" value={formatNumber(analysis.channel.subscriberCount)} />
           <ChannelMetric label="Channel views" value={formatNumber(analysis.channel.totalViewCount)} />
           <ChannelMetric label="Public videos" value={formatNumber(analysis.channel.videoCount)} />
-          <ChannelMetric label="Videos analysed" value={formatNumber(analysis.channel.analysedVideoCount)} />
+          <ChannelMetric label="Selected uploads" value={formatNumber(analysis.channel.analysedVideoCount)} />
         </div>
       </article>
 
+      <article className={`channel-scope-card ${analysis.analysisScope.resolved}`}>
+        <div>
+          <p className="eyebrow">Active analysis lens</p>
+          <h2>{analysis.analysisScope.label}</h2>
+        </div>
+        <div className="channel-scope-facts">
+          <span>
+            <b>{formatNumber(analysis.analysisScope.includedVideoCount)}</b>
+            included
+          </span>
+          <span>
+            <b>{formatNumber(analysis.analysisScope.excludedVideoCount)}</b>
+            excluded
+          </span>
+          <span>
+            <b>{humanise(analysis.analysisScope.confidence)}</b>
+            classification
+          </span>
+        </div>
+        <p>{analysis.analysisScope.caveat}</p>
+      </article>
+
       <PerformanceOverview analysis={analysis} />
-      <DurationCohorts cohorts={analysis.durationCohorts} />
+      <DurationCohorts cohorts={analysis.durationCohorts} scope={analysis.analysisScope} />
       <OutlierGrid outliers={analysis.outliers} />
       <AiAnalysis analysis={analysis} />
 
@@ -533,7 +622,7 @@ function ResultStage({ analysis }) {
         />
       </div>
 
-      <CatalogueTable videos={analysis.catalogue} />
+      <CatalogueTable videos={analysis.catalogue} scope={analysis.analysisScope} />
       <SanityCard sanity={analysis.sanity} />
     </section>
   );
@@ -542,12 +631,16 @@ function ResultStage({ analysis }) {
 function App() {
   const [url, setUrl] = useState("");
   const [analysisMode, setAnalysisMode] = useState("economy");
+  const [videoType, setVideoType] = useState("all");
+  const [dataSource, setDataSource] = useState("real");
   const [configuration, setConfiguration] = useState(null);
   const [ownerAuth, setOwnerAuth] = useState(null);
   const [dailyUsage, setDailyUsage] = useState(null);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const usingFixture = dataSource === "synthetic-channel-short";
+  const devFixturesEnabled = configuration?.devFixturesEnabled === true;
 
   useEffect(() => {
     let active = true;
@@ -575,26 +668,48 @@ function App() {
     setOwnerAuth((current) => ({ ...(current || {}), connected: false, channels: [] }));
   }
 
+  function changeDataSource(nextSource) {
+    setDataSource(nextSource);
+    setAnalysis(null);
+    setError("");
+    if (nextSource === "synthetic-channel-short") {
+      setVideoType("short");
+    }
+  }
+
   async function submit(event) {
     event.preventDefault();
     setError("");
     setAnalysis(null);
     setLoading(true);
     try {
-      const response = await fetch("/api/channel-analysis", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: url.trim(), analysisMode }),
-      });
+      const response = await fetch(
+        usingFixture
+          ? "/api/dev-fixtures/synthetic-channel-short"
+          : "/api/channel-analysis",
+        usingFixture
+          ? { method: "POST" }
+          : {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                url: url.trim(),
+                analysisMode,
+                videoType,
+              }),
+            },
+      );
       const payload = await response.json();
       if (!response.ok) {
         throw new Error(payload?.error?.message ?? "The analysis could not be completed.");
       }
       setAnalysis(payload.analysis);
-      const usageResponse = await fetch("/api/daily-token-usage");
-      if (usageResponse.ok) {
-        const usagePayload = await usageResponse.json();
-        setDailyUsage(usagePayload.usage);
+      if (!usingFixture) {
+        const usageResponse = await fetch("/api/daily-token-usage");
+        if (usageResponse.ok) {
+          const usagePayload = await usageResponse.json();
+          setDailyUsage(usagePayload.usage);
+        }
       }
     } catch (submitError) {
       setError(submitError.message);
@@ -612,14 +727,28 @@ function App() {
             <p className="eyebrow">Channel intelligence / public data</p>
             <h1>Read the catalogue.<br /><em>Plan the next win.</em></h1>
             <p>
-              Compare every public upload using age- and duration-aware
-              metrics, diagnose reach-versus-engagement outliers, and turn the
-              strongest evidence into bounded next-video directions.
+              Choose Shorts, long-form, or the complete public catalogue;
+              compare the selected uploads using age- and duration-aware
+              metrics, then turn the strongest evidence into format-specific
+              next-video directions.
             </p>
           </div>
 
-          <form className="analysis-form" onSubmit={submit}>
-            <label htmlFor="channel-url">YouTube channel URL</label>
+          <form
+            className={`analysis-form ${usingFixture ? "fixture-mode" : ""}`}
+            onSubmit={submit}
+          >
+            <ChannelDevFixtureControl
+              enabled={devFixturesEnabled}
+              value={dataSource}
+              onChange={changeDataSource}
+              disabled={loading}
+            />
+            <label htmlFor="channel-url">
+              {usingFixture
+                ? "YouTube channel URL (not used by fixture)"
+                : "YouTube channel URL"}
+            </label>
             <div className="url-control">
               <span aria-hidden="true">▶</span>
               <input
@@ -627,19 +756,39 @@ function App() {
                 type="url"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                placeholder="https://www.youtube.com/@channel"
+                placeholder={
+                  usingFixture
+                    ? "Synthetic fixture supplies its own Shorts channel"
+                    : "https://www.youtube.com/@channel"
+                }
                 autoComplete="url"
-                required
+                required={!usingFixture}
+                disabled={loading || usingFixture}
               />
             </div>
-            <OwnerAuthControl
-              ownerAuth={ownerAuth}
-              returnTo="/ChannelDashbaord.html"
-              onDisconnect={logoutOwner}
-              title="Creator connection"
-              description="The reusable owner sign-in is ready for Phase 2 Analytics. Phase 1 calculations below use public data only."
+            {usingFixture ? (
+              <div className="dev-fixture-bypass">
+                <strong>Shorts channel data is simulated</strong>
+                <span>
+                  Catalogue metrics, format cohorts, outliers, evidence links
+                  and GPT-style findings come from static fixture data.
+                </span>
+              </div>
+            ) : (
+              <OwnerAuthControl
+                ownerAuth={ownerAuth}
+                returnTo="/ChannelDashbaord.html"
+                onDisconnect={logoutOwner}
+                title="Creator connection"
+                description="The reusable owner sign-in is ready for Phase 2 Analytics. The current channel calculations use public data only."
+              />
+            )}
+            <ChannelVideoTypeControl
+              value={usingFixture ? "short" : videoType}
+              onChange={setVideoType}
+              disabled={loading || usingFixture}
             />
-            <fieldset className="analysis-mode" disabled={loading}>
+            <fieldset className="analysis-mode" disabled={loading || usingFixture}>
               <legend>Analysis depth</legend>
               <label className={analysisMode === "economy" ? "selected" : ""}>
                 <input type="radio" name="analysis-mode" value="economy" checked={analysisMode === "economy"} onChange={(event) => setAnalysisMode(event.target.value)} />
@@ -651,16 +800,33 @@ function App() {
               </label>
             </fieldset>
             <div className="form-footer channel-form-footer">
-              <button type="submit" disabled={loading || dailyUsage?.locked}>
-                {loading ? "Analysing channel…" : dailyUsage?.locked ? "Daily limit reached" : "Analyse channel"}
+              <button
+                type="submit"
+                disabled={loading || (!usingFixture && dailyUsage?.locked)}
+              >
+                {loading
+                  ? usingFixture
+                    ? "Loading Shorts fixture…"
+                    : "Analysing channel…"
+                  : usingFixture
+                    ? "Load synthetic Shorts channel"
+                    : dailyUsage?.locked
+                      ? "Daily limit reached"
+                      : "Analyse channel"}
                 <span aria-hidden="true">→</span>
               </button>
             </div>
-            <small>All uploads are calculated locally; only the representative evidence set is sent in one GPT request.</small>
+            <small>
+              {usingFixture
+                ? "Static Shorts catalogue · zero external requests · zero tokens."
+                : "Only uploads inside the selected lens enter metrics, cohorts, rankings, outliers and the representative GPT evidence set."}
+            </small>
             <span className="form-budget-note">
-              {analysisMode === "heavy" ? "Heavy Analysis · 10,000" : "Economy mode · 6,500"}-token ceiling
+              {usingFixture
+                ? "Synthetic Shorts channel · public-view semantics · no quota usage"
+                : `${analysisMode === "heavy" ? "Heavy Analysis · 10,000" : "Economy mode · 6,500"}-token ceiling`}
             </span>
-            <DailyUsageNotice usage={dailyUsage} />
+            {!usingFixture ? <DailyUsageNotice usage={dailyUsage} /> : null}
           </form>
         </section>
 

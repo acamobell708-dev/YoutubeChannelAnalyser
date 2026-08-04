@@ -44,6 +44,53 @@ export function DevFixtureControl({ enabled, value, onChange, disabled = false }
   );
 }
 
+export function ChannelDevFixtureControl({
+  enabled,
+  value,
+  onChange,
+  disabled = false,
+}) {
+  if (!enabled) return null;
+
+  return (
+    <fieldset className="dev-fixture-control" disabled={disabled}>
+      <legend>Channel test data source</legend>
+      <div className="dev-source-switch">
+        <label className={value === "real" ? "selected" : ""}>
+          <input
+            type="radio"
+            name="channel-development-data-source"
+            value="real"
+            checked={value === "real"}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <span>
+            <b>Real channel analysis</b>
+            <small>Normal YouTube, OAuth and GPT workflow</small>
+          </span>
+        </label>
+        <label className={value === "synthetic-channel-short" ? "selected" : ""}>
+          <input
+            type="radio"
+            name="channel-development-data-source"
+            value="synthetic-channel-short"
+            checked={value === "synthetic-channel-short"}
+            onChange={(event) => onChange(event.target.value)}
+          />
+          <span>
+            <b>Synthetic Shorts channel</b>
+            <small>Static Shorts catalogue, cohorts, outliers and findings</small>
+          </span>
+        </label>
+      </div>
+      <p>
+        Uses the same ENABLE_DEV_FIXTURES setting as the video fixture and
+        makes no external request.
+      </p>
+    </fieldset>
+  );
+}
+
 export function SyntheticFixtureBanner({ fixture }) {
   if (!fixture?.synthetic) return null;
 
