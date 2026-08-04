@@ -733,6 +733,9 @@ function PhaseTwoCompact({ phaseTwo, tokenBudget }) {
                 <i aria-hidden="true">
                   {point.score >= 40 && <b>{Math.round(point.score) / 10}/10</b>}
                 </i>
+                <small className="timeline-timestamp">
+                  {formatTimestamp(point.atSeconds)}
+                </small>
               </span>
             ))}
           </div>
@@ -998,6 +1001,7 @@ function ResultStage({ analysis }) {
         metrics={metrics}
         packaging={insights.packaging}
         retention={retention}
+        tagRecommendation={insights.nextVideo?.optimisation?.tags}
       />
       <PhaseTwoCompact phaseTwo={phaseTwo} tokenBudget={tokenBudget} />
       <FormatRetentionChart

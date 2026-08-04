@@ -287,7 +287,7 @@ function OwnerShortMetrics({ metrics }) {
         label="Engaged-view share"
         value={decimal(metrics.engagedViewSharePercent, "%")}
         note="engaged views / starts"
-        help="Owner engagedViews divided by owner-reported Shorts views, multiplied by 100."
+        help="Engaged-view share = owner Analytics engagedViews divided by owner Analytics views, multiplied by 100. For Shorts, views include starts and replays; engagedViews are playbacks that continued beyond YouTube's initial seconds."
       />
       <MetricCard
         label="Likes"
@@ -363,6 +363,7 @@ export function FormatPerformanceSnapshot({
   metrics,
   packaging,
   retention,
+  tagRecommendation,
 }) {
   const short = videoFormat.resolved === "short";
   const ownerShort = short && Number.isFinite(retention.overview?.engagedViews);
@@ -399,14 +400,20 @@ export function FormatPerformanceSnapshot({
 
       <div className="tag-assessment">
         <div className="tag-assessment-copy">
-          <span>Selected tags</span>
+          <span>GPT assessment of selected tags</span>
           <strong className={`tag-verdict ${packaging.tagUsefulness}`}>
             {String(packaging.tagUsefulness ?? "unknown").replaceAll("_", " ")}
           </strong>
-          <p>{packaging.tagAssessment}</p>
+          <p className="tag-analysis">{packaging.tagAssessment}</p>
+          {tagRecommendation ? (
+            <div className="tag-recommendation">
+              <span>Suggested tag direction</span>
+              <p>{tagRecommendation}</p>
+            </div>
+          ) : null}
         </div>
         {video.tags.length ? (
-          <div className="tag-list">
+          <div className="tag-list" aria-label="Selected public tags">
             {video.tags.slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}
           </div>
         ) : <p className="no-tags">No public tags were returned.</p>}
@@ -432,19 +439,34 @@ export function DiscoveryStatistics({ discovery, videoFormat }) {
         <div className="discovery-grid">
           {discovery.rows.map((row) => (
             <div key={row.id}>
-              <span>{row.label}</span>
+              <span>
+                {short && row.id === "sound_pages"
+                  ? "Sound / audio pages"
+                  : row.label}
+              </span>
               <strong>{Number.isFinite(row.sharePercent) ? `${row.sharePercent}%` : "—"}</strong>
               <small>{formatNumber(row.value)} {discovery.metric === "engagedViews" ? "engaged views" : "views"}</small>
             </div>
           ))}
         </div>
       ) : <p className="discovery-unavailable">{discovery?.reason ?? "Connect the owner account to retrieve traffic-source data."}</p>}
-      {!short ? (
+      {short ? (
+        <aside className="discovery-source-note">
+          <strong>What “Sound / audio pages” means</strong>
+          <p>
+            These viewers reached the Short from a YouTube page that groups
+            Shorts using the same audio. It is a referral source, not proof that
+            the sound caused the performance. A broader alternative presentation
+            would be “Other YouTube surfaces”, combining hashtag, channel,
+            subscriber, related-video, and other YouTube-page referrals.
+          </p>
+        </aside>
+      ) : (
         <aside className="thumbnail-reach-note">
           <strong>Thumbnail impressions and click-through rate</strong>
           <p>{discovery?.thumbnailReach?.reason ?? "Unavailable in this targeted Analytics request."}</p>
         </aside>
-      ) : null}
+      )}
     </article>
   );
 }
@@ -479,6 +501,26 @@ function RetentionMomentExplanations({ retention, short }) {
         possible explanation. It is evidence-led interpretation, not proof of
         causation.
       </p>
+
+      <div className="retention-ai-guide" aria-label="How to read measured changes">
+        <p>
+          <b>Point change</b>
+          A point is one percentage point of measured audience retention. A
+          −6-point item means retention was six percentage points below its
+          recent local baseline; it is not a score out of ten.
+        </p>
+        <p>
+          <b>Confidence</b>
+          Medium means the supplied transcript or comments provide a plausible
+          match. Low means the explanation is more tentative or the nearby
+          evidence is limited.
+        </p>
+        <p>
+          <b>Event label</b>
+          “Early swipe-risk drop” is a sustained fall within the first 15% of a
+          Short, where viewers may still be deciding whether to swipe away.
+        </p>
+      </div>
 
       <div className="retention-ai-grid">
         {moments.map((moment, index) => {
@@ -536,13 +578,19 @@ function RetentionMomentExplanations({ retention, short }) {
               </div>
 
               <footer>
-                <span>
+                <span
+                  className={`retention-confidence ${
+                    moment.confidence ?? "unknown"
+                  }`}
+                >
                   {moment.confidence
                     ? `${humaniseRetentionLabel(moment.confidence)} confidence`
                     : "Confidence unavailable"}
                 </span>
                 {moment.eventType ? (
-                  <small>{humaniseRetentionLabel(moment.eventType)}</small>
+                  <small className="retention-event-label">
+                    {humaniseRetentionLabel(moment.eventType)}
+                  </small>
                 ) : null}
               </footer>
             </article>

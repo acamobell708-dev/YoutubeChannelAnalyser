@@ -1890,7 +1890,8 @@ a {
 
 .timeline-column {
   min-width: 0;
-  height: 170px;
+  height: 190px;
+  padding-bottom: 20px;
   display: flex;
   align-items: center;
   flex-direction: column;
@@ -1933,6 +1934,15 @@ a {
   font-size: 15px;
   font-weight: 400;
   line-height: 1;
+}
+
+.timeline-timestamp {
+  position: absolute;
+  bottom: 0;
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
 }
 
 .phase-two-details.light-drawer {
@@ -2253,15 +2263,17 @@ a {
 }
 
 .tag-assessment {
-  margin-top: 10px;
-  padding: 13px 14px;
+  margin-top: 14px;
+  padding: 17px 18px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(220px, 0.75fr);
-  align-items: center;
-  gap: 14px;
-  border: 1px solid rgba(203, 228, 91, 0.15);
-  border-radius: 11px;
-  background: rgba(203, 228, 91, 0.045);
+  align-items: stretch;
+  gap: 16px;
+  border: 1px solid rgba(142, 215, 229, 0.32);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, rgba(72, 171, 191, 0.12), transparent 62%),
+    rgba(203, 228, 91, 0.045);
 }
 
 .tag-assessment-copy {
@@ -2272,9 +2284,10 @@ a {
 }
 
 .tag-assessment-copy > span {
-  color: rgba(255, 255, 255, 0.55);
+  color: #8ed7e5;
   font-size: 9px;
   font-weight: 850;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
 
@@ -2304,10 +2317,39 @@ a {
 }
 
 .tag-assessment-copy p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  display: block;
+  overflow: visible;
+  -webkit-line-clamp: unset;
+}
+
+.tag-analysis {
+  color: rgba(255, 255, 255, 0.86) !important;
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+}
+
+.tag-recommendation {
+  flex-basis: 100%;
+  margin-top: 5px;
+  padding: 10px 11px;
+  border-left: 3px solid var(--lime);
+  background: rgba(203, 228, 91, 0.075);
+}
+
+.tag-recommendation > span {
+  display: block;
+  color: var(--lime);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.tag-recommendation p {
+  margin-top: 4px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 9px;
+  line-height: 1.55;
 }
 
 .detail-drawer {
@@ -2453,7 +2495,7 @@ a {
 }
 
 .cross-evidence-summary {
-  margin-top: 14px;
+  margin: 14px 0 22px;
   padding: 16px 18px;
   display: grid;
   grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);

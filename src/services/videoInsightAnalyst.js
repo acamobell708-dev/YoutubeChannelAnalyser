@@ -280,6 +280,8 @@ export class VideoInsightAnalyst {
       short
         ? "Packaging: prioritise first-frame clarity, immediate spoken/on-screen hook, caption readability, payoff timing and loop compatibility. Mention title/thumbnail only where they affect non-feed discovery."
         : "Packaging: prioritise title clarity, thumbnail clarity, title-thumbnail promise, search intent, expectation match and whether the opening delivers the promise.",
+      "Tags: judge whether the supplied tags are genuinely useful for this video's specific topic, entities, likely search phrasing and viewer intent. Do not call tags beneficial merely because they are broadly relevant, and do not imply that tags guarantee distribution.",
+      "Set packaging.tagAssessment to a clear usefulness verdict with a brief reason. Set nextVideo.optimisation.tags to three to six specific alternative or additional tag suggestions grounded in the supplied title, description, transcript and audience evidence; say no extra tags are justified when that is the stronger conclusion, and avoid generic tags such as viral or trending.",
       "Do not repeat a deterministic metric in packaging, audience, cross-evidence and next-video sections. State it once, then give an action.",
       short
         ? "Return exactly three Short concepts. In each subject: angle = 'First frame: ... | Opening line: ...'; rationale = 'Payoff: ... | Duration: ... | Target: engagement, completion, sharing, or subscriber conversion'; execution = 'Loop/ending: ... | Captions: ... | Alternative hook: ...'."
